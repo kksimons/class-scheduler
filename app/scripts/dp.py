@@ -38,9 +38,10 @@ def generate_optimal_schedule(courses, time_limit=30, exclude_weekend=True):
     best_schedule = []
     best_score = (0, 0)
 
+    # Only allow weekdays if exclude_weekend is True
     valid_days = {"M", "Tu", "W", "Th", "F"}
     if not exclude_weekend:
-        valid_days.add("S")
+        valid_days.update(["S", "Su"])  # Include Saturday and Sunday if weekends are allowed
 
     for course_combination in itertools.product(*[course["sections"] for course in courses]):
         if time.time() - start_time > time_limit:
@@ -48,26 +49,43 @@ def generate_optimal_schedule(courses, time_limit=30, exclude_weekend=True):
 
         day_vectors = {day: [0] * (24 * 60) for day in valid_days}
         structured_schedule = []
-
         conflict_found = False
+
+        scheduled_courses = set()
+
         for idx, section in enumerate(course_combination):
             course_name = courses[idx]["course"]
+
+            # Skip if this course is already scheduled (prevents duplicate scheduling)
+            if course_name in scheduled_courses:
+                continue
+
             professor = section["professor"]
             day1 = section["day1"]
             day2 = section["day2"]
 
+            # Ensure both days are in valid_days
             for day_info in [day1, day2]:
-                if day_info["day"] in day_vectors:
-                    start = parse_time(day_info["start"])
-                    end = parse_time(day_info["end"])
+                if day_info["day"] not in valid_days:
+                    conflict_found = True
+                    break
 
-                    if not is_free(day_vectors[day_info["day"]], start, end):
-                        conflict_found = True
-                        break
-                    mark_time(day_vectors[day_info["day"]], start, end)
+                start = parse_time(day_info["start"])
+                end = parse_time(day_info["end"])
+
+                if not is_free(day_vectors[day_info["day"]], start, end):
+                    conflict_found = True
+                    break
 
             if conflict_found:
                 break
+
+            # Mark the times for each day in the section
+            for day_info in [day1, day2]:
+                if day_info["day"] in valid_days:
+                    start = parse_time(day_info["start"])
+                    end = parse_time(day_info["end"])
+                    mark_time(day_vectors[day_info["day"]], start, end)
 
             structured_schedule.append({
                 "course": course_name,
@@ -75,14 +93,17 @@ def generate_optimal_schedule(courses, time_limit=30, exclude_weekend=True):
                 "day2": day2,
                 "professor": professor
             })
+            scheduled_courses.add(course_name)
 
         if conflict_found:
             continue
 
-        days_off, online_only_days = evaluate_schedule(course_combination)
+        days_off, online_only_days = evaluate_schedule(structured_schedule)
 
         if (days_off, online_only_days) > best_score:
             best_schedule = structured_schedule
             best_score = (days_off, online_only_days)
 
     return best_schedule, best_score if best_schedule else None
+
+
