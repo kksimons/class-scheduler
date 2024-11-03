@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "5000:5000"  # FastAPI exposed on port 5000
+
+  nginx:
+    build: 
+      context: .
+      dockerfile: Dockerfile.nginx
+    
+    depends_on:
+      - app
+
+    ports:
+      - "80:80"  # Nginx exposed on port 80
