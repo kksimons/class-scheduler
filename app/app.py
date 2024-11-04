@@ -36,7 +36,7 @@ class Course(BaseModel):
 
 class ClassScheduleInput(BaseModel):
     courses: List[Course]              # List of courses to schedule
-    exclude_weekend: Optional[bool] = True  # Option to exclude weekends
+    exclude_weekend: Optional[bool] = True  # Option to exclude weekends, default to exclude (true)
 
 @app.get("/")
 def read_root():
@@ -50,7 +50,7 @@ async def class_scheduler(data: ClassScheduleInput):
     """
     API endpoint to generate the optimal class schedule.
     Args:
-        data (ClassScheduleInput): Input data containing courses and options.
+        data (ClassScheduleInput): Input data in json containing courses and options.
     Returns:
         dict: A response containing the optimal schedule or an error message.
     """

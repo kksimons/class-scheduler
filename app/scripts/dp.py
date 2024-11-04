@@ -4,6 +4,7 @@ import time
 def parse_time(time_str):
     """
     Converts a time string in "HH:MM" format to total minutes since midnight.
+    We are receiving 24 hour format from the client and gets us an integer for easy comparisons.
     Args:
         time_str (str): Time string in "HH:MM" format (e.g., "13:30").
     Returns:
@@ -16,7 +17,8 @@ def mark_time(day_vector, start, end):
     """
     Marks the time slots in the day_vector as occupied between start and end times.
     Args:
-        day_vector (list): List representing each minute of the day (0 for free, 1 for occupied).
+        day_vector (list): List representing each minute of the day (1440 minutes total).
+        We use a boolean to set whether a time slot is free (0), or occupied (1).
         start (int): Start time in minutes since midnight.
         end (int): End time in minutes since midnight.
     """
@@ -25,7 +27,7 @@ def mark_time(day_vector, start, end):
 
 def is_free(day_vector, start, end):
     """
-    Checks if the time slot between start and end is free in the day_vector.
+    Checks if the time slot between start and end is free (true, else returns false) in the day_vector by iterating over each minute from the start and end time.
     Args:
         day_vector (list): List representing each minute of the day.
         start (int): Start time in minutes since midnight.
@@ -46,7 +48,7 @@ def evaluate_schedule(schedule):
     # Define the weekdays
     weekdays = {"M", "Tu", "W", "Th", "F"}
 
-    # Initialize a dictionary to count classes for each day
+    # Initialize a dictionary to count classes for each weekday
     day_classes = {day: {"online": 0, "in-person": 0} for day in weekdays}
 
     # Iterate over each section in the schedule
@@ -74,7 +76,7 @@ def evaluate_schedule(schedule):
 
 def generate_optimal_schedule(courses, time_limit=30, exclude_weekend=True):
     """
-    Generates the optimal schedule by exploring possible combinations of course sections.
+    Generates the optimal schedule by exploring all possible combinations of course sections.
     Args:
         courses (list): List of courses with their sections.
         time_limit (int): Maximum time allowed for schedule generation (in seconds).
