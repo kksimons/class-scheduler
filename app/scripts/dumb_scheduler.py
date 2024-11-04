@@ -1,6 +1,47 @@
 import itertools
 import time
 
+"""
+Possible combinations with 5 courses, each with 5 sections, there are 5^5 = 3125 combinations.
+We set a time limit in the code to attempt to mitigate this but at the cost of potentially missing optimal solutions.
+
+Not DP
+Uses itertools.product to generate all possible combinations of course sections.
+Iteratively checks each combination for scheduling conflicts.
+Evaluates and keeps track of the best schedule found based on certain criteria.
+Does not store intermediate results to avoid redundant computations.
+
+NOT LCG
+LCG is a hybrid approach combining CP and SAT solving.
+Constraints are posted at a high level, and conflicts during search lead to the generation of clauses (nogoods) to prevent similar conflicts in the future.
+Nogoods are partial assignments that are known to lead to conflicts and are stored to prevent the solver from revisiting them.
+We do not not generate clauses or nogoods, analyze conflicts to improve future search steps but instead simply skips over combinations where conflicts are found.
+
+NOT SAT
+Involves encoding a problem into a boolean formula and determining if there is an assignment of truth values to variables that satisfies the formula.
+Uses advanced algorithms like the DPLL algorithm, clause learning, and heuristics for variable selection.
+We do not encode the problem into a boolean formula or use SAT solvers or related algorithms.
+Instead rely on procedural checks for scheduling conflicts.
+
+NOT CP Model
+Does not explicitly define variables and domains in the CP sense.
+Does not use constraint propagation or specialized CP solvers.
+Performs an exhaustive (though time-limited) search over all combinations.
+The code solves a CSP but does not employ CP methodologies. Therefore, it is not considered a CP model.
+Uses simple boolean flags (e.g., day_vector with 0 or 1 to represent free or occupied time slots).
+Does not model the problem using high-level boolean variables and constraints in the way CP models do.
+
+In CP, atomic constraints are the basic building blocks that specify relationships between variables (e.g., X != Y, X + Y <= Z).
+These are used by CP solvers to enforce consistency and prune the search space.
+
+We implement constraints implicitly through checks (e.g., time conflicts).
+But do not define atomic constraints between variables.
+Constraints are procedural (checking time overlaps) rather than declarative.
+
+We perform an exhaustive search over possible combinations (within a time limit).
+Could use advanced optimization techniques to efficiently handle larger datasets.
+"""
+
 def parse_time(time_str):
     """
     Converts a time string in "HH:MM" format to total minutes since midnight.

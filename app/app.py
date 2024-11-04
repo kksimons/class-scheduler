@@ -5,7 +5,7 @@ from typing import List, Optional
 import uvicorn
 
 # Import the updated generate_optimal_schedule function
-from scripts.dp import generate_optimal_schedule
+from app.scripts.dumb_scheduler import generate_optimal_schedule
 
 app = FastAPI()
 
