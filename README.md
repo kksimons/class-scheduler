@@ -2,7 +2,7 @@ You can either pull this down and run the streamlit, it or you can use docker an
 If you pull down the repo you will need to do a `pip install -r requirements.txt` to make sure you've got all dependencies installed.
 
 ## Docker (docker must be installed and running: https://docs.docker.com/desktop/install/windows-install/)
-`docker pull kksimons/scheduler:latest`
+`docker pull kksimons/class-scheduler:latest`
 
 This means you've got to post to port 80
 `docker run -p 80:5000 kksimons/class-scheduler:latest`
