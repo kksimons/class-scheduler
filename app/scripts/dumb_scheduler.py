@@ -115,7 +115,7 @@ def evaluate_schedule(schedule):
 
     return days_off, online_only_days
 
-def generate_optimal_schedule(courses, time_limit=30, exclude_weekend=True):
+def generate_dumb_schedule(courses, time_limit=30, exclude_weekend=True):
     """
     Generates the optimal schedule by exploring all possible combinations of course sections.
     Args:

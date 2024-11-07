@@ -5,7 +5,9 @@ from typing import List, Optional
 import uvicorn
 
 # Import the updated generate_optimal_schedule function
-from app.scripts.dumb_scheduler import generate_optimal_schedule
+from scripts.dumb_scheduler import generate_dumb_schedule
+from scripts.optimal_scheduler import generate_optimal_schedule
+
 
 app = FastAPI()
 
@@ -62,7 +64,7 @@ async def class_scheduler(data: ClassScheduleInput):
     courses = [course.dict() for course in course_data]
 
     # Generate the optimal schedule using the provided courses data
-    optimal_schedule, best_score = generate_optimal_schedule(
+    optimal_schedule, best_score = generate_dumb_schedule(
         courses, exclude_weekend=exclude_weekend
     )
 
@@ -73,6 +75,33 @@ async def class_scheduler(data: ClassScheduleInput):
                 f"Online-only days: {best_score[1]})"
             ),
             "schedules": optimal_schedule
+        }
+    else:
+        response = {"message": "No valid schedule found within the time limit."}
+
+    return response
+
+# this is for the optimal scheduler
+@app.post("/api/v1/class-scheduler-optimal")
+async def class_scheduler_optimal(data: ClassScheduleInput):
+    """
+    API endpoint to generate the optimal class schedule using the optimal scheduler.
+    """
+    
+    # Convert the Pydantic models to dictionaries for processing
+    courses = [course.dict() for course in data.courses]
+    exclude_weekend = data.exclude_weekend
+
+    # Generate the optimal schedule using the optimal scheduler
+    optimal_schedule, best_score = generate_optimal_schedule(courses, exclude_weekend=exclude_weekend)
+
+    if optimal_schedule:
+        response = {
+            "result": (
+                f"Optimal Schedule (Weekday days off: {best_score[0]}, "
+                f"Online-only days: {best_score[1]})"
+            ),
+            "schedules": optimal_schedule,
         }
     else:
         response = {"message": "No valid schedule found within the time limit."}
