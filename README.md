@@ -8,7 +8,7 @@ This means you've got to post to port 80
 `docker run -p 80:5000 kksimons/class-scheduler:latest`
 
 ## Use Postman
-The endpoint you want to test is: `http://localhost:80/api/v1/class-scheduler`
+The endpoint you want to test is: `http://localhost:80/api/v1/class-scheduler` or `http://localhost:80/api/v1/class-scheduler-optimal`
 
 Curl Post:
 
