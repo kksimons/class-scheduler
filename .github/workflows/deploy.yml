@@ -31,10 +31,10 @@ jobs:
             git clone https://github.com/kksimons/class-scheduler.git .
           fi
           
-          # Install Python dependencies
-          python3 -m pip install --user -r app/requirements.txt
+          # Install Python dependencies with --break-system-packages
+          python3 -m pip install --user --break-system-packages -r app/requirements.txt
           
-          # Restart the systemd service
+          # Restart the systemd service (passwordless sudo required)
           sudo systemctl restart class-scheduler.service
           
           # Wait a moment and check if it's running
