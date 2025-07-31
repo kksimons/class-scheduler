@@ -183,10 +183,10 @@ async def portfolio_generate_schedule(
     if optimal_schedule:
         # Convert to portfolio format
         schedule_selections = []
-        for course_name, section_data in optimal_schedule.items():
+        for section_data in optimal_schedule:
             schedule_selections.append(
                 {
-                    "course": course_name,
+                    "course": section_data.get("course", "Unknown"),
                     "professor": section_data.get("professor", "Unknown"),
                     "section": section_data,
                 }
@@ -213,42 +213,112 @@ async def portfolio_optimal_schedules(
     )
 
     courses = [course.dict() for course in data.courses]
-
-    # Generate optimal schedule
-    optimal_schedule, best_score = generate_optimal_schedule(
-        courses, exclude_weekend=True
-    )
+    requested_count = data.count or 5
 
     schedules = []
-    if optimal_schedule:
-        # Convert to portfolio format
-        selections = []
-        for course_name, section_data in optimal_schedule.items():
-            selections.append(
-                {
-                    "course": course_name,
-                    "professor": section_data.get("professor", "Unknown"),
-                    "section": section_data,
-                }
-            )
+    
+    # Generate multiple schedule variations by trying different approaches
+    variation_configs = [
+        {"exclude_weekend": True, "time_limit": 30},   # Optimal with full time
+        {"exclude_weekend": True, "time_limit": 15},   # Faster search
+        {"exclude_weekend": False, "time_limit": 20},  # Include weekends
+        {"exclude_weekend": True, "time_limit": 10},   # Quick search
+        {"exclude_weekend": False, "time_limit": 10},  # Quick with weekends
+    ]
+    
+    generated_schedules = set()  # Track unique schedules to avoid duplicates
+    
+    for i, config in enumerate(variation_configs[:requested_count]):
+        try:
+            print(f"🔄 Generating variation {i+1} with config: {config}")
+            
+            # Try optimal scheduler first
+            try:
+                optimal_schedule, best_score = generate_optimal_schedule(
+                    courses, 
+                    exclude_weekend=config["exclude_weekend"]
+                )
+            except Exception as e:
+                print(f"Optimal scheduler failed: {e}")
+                optimal_schedule = None
+            
+            # If optimal scheduler fails, fall back to dumb scheduler
+            if not optimal_schedule:
+                optimal_schedule, best_score = generate_dumb_schedule(
+                    courses,
+                    exclude_weekend=config["exclude_weekend"],
+                    time_limit=config.get("time_limit", 30)
+                )
+            
+            if optimal_schedule:
+                # Create a signature for this schedule to detect duplicates
+                schedule_signature = []
+                for section_data in optimal_schedule:
+                    signature_part = f"{section_data.get('course', '')}-{section_data.get('professor', '')}"
+                    schedule_signature.append(signature_part)
+                schedule_signature = sorted(schedule_signature)
+                signature_str = "|".join(schedule_signature)
+                
+                # Only add if it's unique
+                if signature_str not in generated_schedules:
+                    generated_schedules.add(signature_str)
+                    
+                    # Convert to portfolio format
+                    selections = []
+                    for section_data in optimal_schedule:
+                        selections.append(
+                            {
+                                "course": section_data.get("course", "Unknown"),
+                                "professor": section_data.get("professor", "Unknown"),
+                                "section": section_data,
+                            }
+                        )
 
-        schedules.append(
-            {
-                "selections": selections,
-                "conflictScore": 0,  # You can implement conflict detection
-                "score": sum(best_score)
-                if isinstance(best_score, (list, tuple))
-                else best_score,
-            }
-        )
+                    # Calculate conflict score (basic implementation)
+                    conflict_score = 0
+                    time_slots = {}
+                    for section_data in optimal_schedule:
+                        for day_key in ["day1", "day2"]:
+                            if day_key in section_data:
+                                day_info = section_data[day_key]
+                                time_key = f"{day_info.get('day')}-{day_info.get('start')}-{day_info.get('end')}"
+                                if time_key in time_slots:
+                                    conflict_score += 1
+                                time_slots[time_key] = True
 
-        # Generate a few variations if possible
-        # For now, just return the one optimal schedule
-        # You could enhance this to generate multiple different schedules
+                    schedules.append(
+                        {
+                            "selections": selections,
+                            "conflictScore": conflict_score,
+                            "score": sum(best_score)
+                            if isinstance(best_score, (list, tuple))
+                            else best_score,
+                            "variation": i + 1,
+                            "config": config
+                        }
+                    )
+                    
+                    print(f"✅ Generated unique variation {i+1}")
+                else:
+                    print(f"⚠️ Variation {i+1} was duplicate, skipping")
+            else:
+                print(f"❌ Failed to generate variation {i+1}")
+                
+        except Exception as e:
+            print(f"❌ Error generating variation {i+1}: {e}")
+            continue
+    
+    # If we don't have enough unique schedules, pad with the best one we have
+    if len(schedules) == 1 and requested_count > 1:
+        base_schedule = schedules[0]
+        for i in range(1, min(requested_count, 3)):  # Don't spam too many duplicates
+            duplicate_schedule = base_schedule.copy()
+            duplicate_schedule["variation"] = i + 1
+            schedules.append(duplicate_schedule)
 
     return {
         "schedules": schedules,
-        "message": f"Generated {len(schedules)} optimal schedule(s)",
+        "message": f"Generated {len(schedules)} schedule variation(s)",
     }
 
 
