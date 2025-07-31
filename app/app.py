@@ -20,25 +20,32 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
+
 # Define Pydantic models for data validation and parsing
 class DayInfo(BaseModel):
-    day: str           # Day of the week (e.g., "M", "Tu")
-    start: str         # Start time in "HH:MM" format
-    end: str           # End time in "HH:MM" format
-    format: str        # Class format ("online" or "in-person")
+    day: str  # Day of the week (e.g., "M", "Tu")
+    start: str  # Start time in "HH:MM" format
+    end: str  # End time in "HH:MM" format
+    format: str  # Class format ("online" or "in-person")
+
 
 class Section(BaseModel):
-    day1: DayInfo      # First day information
-    day2: DayInfo      # Second day information
-    professor: str     # Professor's name
+    day1: DayInfo  # First day information
+    day2: DayInfo  # Second day information
+    professor: str  # Professor's name
+
 
 class Course(BaseModel):
-    course: str                # Course name or code
-    sections: List[Section]    # List of available sections for the course
+    course: str  # Course name or code
+    sections: List[Section]  # List of available sections for the course
+
 
 class ClassScheduleInput(BaseModel):
-    courses: List[Course]              # List of courses to schedule
-    exclude_weekend: Optional[bool] = True  # Option to exclude weekends, default to exclude (true)
+    courses: List[Course]  # List of courses to schedule
+    exclude_weekend: Optional[bool] = (
+        True  # Option to exclude weekends, default to exclude (true)
+    )
+
 
 @app.get("/")
 def read_root():
@@ -46,6 +53,7 @@ def read_root():
     Root endpoint to confirm the API is running.
     """
     return {"message": "Class Scheduler is up!"}
+
 
 @app.post("/api/v1/class-scheduler")
 async def class_scheduler(data: ClassScheduleInput):
@@ -74,12 +82,13 @@ async def class_scheduler(data: ClassScheduleInput):
                 f"Optimal Schedule (Weekday days off: {best_score[0]}, "
                 f"Online-only days: {best_score[1]})"
             ),
-            "schedules": optimal_schedule
+            "schedules": optimal_schedule,
         }
     else:
         response = {"message": "No valid schedule found within the time limit."}
 
     return response
+
 
 # this is for the optimal scheduler
 @app.post("/api/v1/class-scheduler-optimal")
@@ -87,13 +96,15 @@ async def class_scheduler_optimal(data: ClassScheduleInput):
     """
     API endpoint to generate the optimal class schedule using the optimal scheduler.
     """
-    
+
     # Convert the Pydantic models to dictionaries for processing
     courses = [course.dict() for course in data.courses]
     exclude_weekend = data.exclude_weekend
 
     # Generate the optimal schedule using the optimal scheduler
-    optimal_schedule, best_score = generate_optimal_schedule(courses, exclude_weekend=exclude_weekend)
+    optimal_schedule, best_score = generate_optimal_schedule(
+        courses, exclude_weekend=exclude_weekend
+    )
 
     if optimal_schedule:
         response = {
@@ -108,11 +119,7 @@ async def class_scheduler_optimal(data: ClassScheduleInput):
 
     return response
 
+
 if __name__ == "__main__":
     # Run the FastAPI application with uvicorn server
-    uvicorn.run(
-        app="app:app",
-        host="0.0.0.0",
-        port=8502,
-        reload=True
-    )
+    uvicorn.run(app="app:app", host="0.0.0.0", port=8502, reload=True)
