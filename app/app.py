@@ -25,16 +25,18 @@ API_SECRET_KEY = os.getenv("API_SECRET_KEY")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000", 
+        "http://localhost:3000",
         "http://localhost:4321",  # Portfolio dev server
         "http://127.0.0.1:4321",  # Alternative local
         "https://kylesimons.ca",  # Production portfolio domain
-        "https://www.kylesimons.ca"  # Include www subdomain
+        "https://www.kylesimons.ca",  # Include www subdomain
+        "*",  # Allow all origins for development - remove in production
     ],
     allow_credentials=False,  # Portfolio auth doesn't use credentials
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"],
     allow_headers=["*"],
 )
+
 
 def verify_api_key(x_api_key: str = Header(None)):
     if not x_api_key or x_api_key != API_SECRET_KEY:
@@ -77,7 +79,9 @@ def read_root():
 
 
 @app.post("/api/v1/class-scheduler")
-async def class_scheduler(data: ClassScheduleInput, api_key: str = Depends(verify_api_key)):
+async def class_scheduler(
+    data: ClassScheduleInput, api_key: str = Depends(verify_api_key)
+):
     """
     API endpoint to generate the optimal class schedule.
     Args:
@@ -113,7 +117,9 @@ async def class_scheduler(data: ClassScheduleInput, api_key: str = Depends(verif
 
 # this is for the optimal scheduler
 @app.post("/api/v1/class-scheduler-optimal")
-async def class_scheduler_optimal(data: ClassScheduleInput, api_key: str = Depends(verify_api_key)):
+async def class_scheduler_optimal(
+    data: ClassScheduleInput, api_key: str = Depends(verify_api_key)
+):
     """
     API endpoint to generate the optimal class schedule using the optimal scheduler.
     """
@@ -146,109 +152,125 @@ class PortfolioScheduleRequest(BaseModel):
     courses: List[Course]
     preferences: Optional[dict] = {}
 
+
 class PortfolioOptimalRequest(BaseModel):
     courses: List[Course]
     count: Optional[int] = 5
 
+
 class PortfolioValidateRequest(BaseModel):
     schedule: List[dict]  # List of selected course sections
 
+
 @app.post("/api/generate-schedule")
 async def portfolio_generate_schedule(
-    data: PortfolioScheduleRequest, 
-    portfolio_key: str = Depends(verify_portfolio_auth)
+    data: PortfolioScheduleRequest, portfolio_key: str = Depends(verify_portfolio_auth)
 ):
     """
     Portfolio endpoint to generate a schedule
     """
     print(f"📱 Portfolio request authenticated with key: {portfolio_key[:8]}...")
-    
+
     # Convert to the format expected by existing schedulers
     courses = [course.dict() for course in data.courses]
-    exclude_weekend = data.preferences.get('exclude_weekend', True)
-    
+    exclude_weekend = data.preferences.get("exclude_weekend", True)
+
     # Use the dumb scheduler for basic generation
     optimal_schedule, best_score = generate_dumb_schedule(
         courses, exclude_weekend=exclude_weekend
     )
-    
+
     if optimal_schedule:
         # Convert to portfolio format
         schedule_selections = []
         for course_name, section_data in optimal_schedule.items():
-            schedule_selections.append({
-                "course": course_name,
-                "professor": section_data.get("professor", "Unknown"),
-                "section": section_data
-            })
-        
+            schedule_selections.append(
+                {
+                    "course": course_name,
+                    "professor": section_data.get("professor", "Unknown"),
+                    "section": section_data,
+                }
+            )
+
         return {
             "schedule": schedule_selections,
             "message": "Schedule generated successfully",
-            "score": best_score
+            "score": best_score,
         }
     else:
         return {"schedule": [], "message": "No valid schedule found"}
 
+
 @app.post("/api/optimal-schedules")
 async def portfolio_optimal_schedules(
-    data: PortfolioOptimalRequest,
-    portfolio_key: str = Depends(verify_portfolio_auth)
+    data: PortfolioOptimalRequest, portfolio_key: str = Depends(verify_portfolio_auth)
 ):
     """
     Portfolio endpoint to get multiple optimal schedules
     """
-    print(f"📱 Portfolio optimal schedules request authenticated with key: {portfolio_key[:8]}...")
-    
+    print(
+        f"📱 Portfolio optimal schedules request authenticated with key: {portfolio_key[:8]}..."
+    )
+
     courses = [course.dict() for course in data.courses]
-    
+
     # Generate optimal schedule
-    optimal_schedule, best_score = generate_optimal_schedule(courses, exclude_weekend=True)
-    
+    optimal_schedule, best_score = generate_optimal_schedule(
+        courses, exclude_weekend=True
+    )
+
     schedules = []
     if optimal_schedule:
         # Convert to portfolio format
         selections = []
         for course_name, section_data in optimal_schedule.items():
-            selections.append({
-                "course": course_name,
-                "professor": section_data.get("professor", "Unknown"),
-                "section": section_data
-            })
-        
-        schedules.append({
-            "selections": selections,
-            "conflictScore": 0,  # You can implement conflict detection
-            "score": sum(best_score) if isinstance(best_score, (list, tuple)) else best_score
-        })
-        
+            selections.append(
+                {
+                    "course": course_name,
+                    "professor": section_data.get("professor", "Unknown"),
+                    "section": section_data,
+                }
+            )
+
+        schedules.append(
+            {
+                "selections": selections,
+                "conflictScore": 0,  # You can implement conflict detection
+                "score": sum(best_score)
+                if isinstance(best_score, (list, tuple))
+                else best_score,
+            }
+        )
+
         # Generate a few variations if possible
         # For now, just return the one optimal schedule
         # You could enhance this to generate multiple different schedules
-    
+
     return {
         "schedules": schedules,
-        "message": f"Generated {len(schedules)} optimal schedule(s)"
+        "message": f"Generated {len(schedules)} optimal schedule(s)",
     }
+
 
 @app.post("/api/validate-schedule")
 async def portfolio_validate_schedule(
-    data: PortfolioValidateRequest,
-    portfolio_key: str = Depends(verify_portfolio_auth)
+    data: PortfolioValidateRequest, portfolio_key: str = Depends(verify_portfolio_auth)
 ):
     """
     Portfolio endpoint to validate a schedule for conflicts
     """
-    print(f"📱 Portfolio validation request authenticated with key: {portfolio_key[:8]}...")
-    
+    print(
+        f"📱 Portfolio validation request authenticated with key: {portfolio_key[:8]}..."
+    )
+
     # Simple conflict detection
     conflicts = []
     time_slots = {}
-    
+
     for selection in data.schedule:
         section = selection.get("section", {})
         course = selection.get("course", "Unknown")
-        
+
         # Check both day1 and day2 for conflicts
         for day_key in ["day1", "day2"]:
             if day_key in section:
@@ -256,23 +278,25 @@ async def portfolio_validate_schedule(
                 day = day_info.get("day")
                 start = day_info.get("start")
                 end = day_info.get("end")
-                
+
                 if day and start and end:
                     key = f"{day}-{start}-{end}"
                     if key in time_slots:
-                        conflicts.append({
-                            "course1": course,
-                            "course2": time_slots[key],
-                            "day": day,
-                            "time": f"{start}-{end}"
-                        })
+                        conflicts.append(
+                            {
+                                "course1": course,
+                                "course2": time_slots[key],
+                                "day": day,
+                                "time": f"{start}-{end}",
+                            }
+                        )
                     else:
                         time_slots[key] = course
-    
+
     return {
         "valid": len(conflicts) == 0,
         "conflicts": conflicts,
-        "message": f"Validation complete. {len(conflicts)} conflicts found."
+        "message": f"Validation complete. {len(conflicts)} conflicts found.",
     }
 
 
