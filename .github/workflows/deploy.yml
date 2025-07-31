@@ -41,8 +41,17 @@ jobs:
           if sudo systemctl is-active --quiet class-scheduler.service; then
             echo "FastAPI app started successfully"
             sudo systemctl status class-scheduler.service --no-pager
+            echo ""
+            echo "Memory status after deployment:"
+            free -h
+            echo ""
+            echo "Swap status:"
+            sudo swapon --show || echo "No swap configured"
           else
             echo "Failed to start FastAPI app"
             sudo journalctl -u class-scheduler.service --no-pager -n 10
+            echo ""
+            echo "Memory status:"
+            free -h
             exit 1
           fi
