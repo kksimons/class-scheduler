@@ -43,6 +43,13 @@ jobs:
             echo "Verifying critical dependencies..."
             python3 -c "import libsql_client; print('✅ libsql_client installed')" || echo "❌ libsql_client missing"
             python3 -c "import fastapi; print('✅ fastapi installed')" || echo "❌ fastapi missing"
+            
+            # Create/update .env file with secrets
+            cat > app/.env << 'ENVEOF'
+            TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
+            TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
+            API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
+            ENVEOF
 
             # Kill any existing process and restart manually if sudo fails
             if ! sudo systemctl restart class-scheduler.service 2>/dev/null; then
