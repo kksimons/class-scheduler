@@ -16,8 +16,14 @@ from scripts.optimal_scheduler import generate_optimal_schedule
 # Import portfolio authentication
 from portfolio_auth import verify_portfolio_auth
 
+# Import database utilities
+from database import SchedulerDatabase
+
 
 app = FastAPI()
+
+# Initialize database instance
+database = SchedulerDatabase()
 
 # Get API secret key from environment
 API_SECRET_KEY = os.getenv("API_SECRET_KEY")
@@ -32,11 +38,12 @@ ALLOWED_ORIGINS = [
     "https://kksimons-portfolio-2025-36.deno.dev",  # Deno deploy stable URL
 ]
 
+
 class SingleOriginCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         origin = request.headers.get("origin")
         print(f"🔧 CORS Middleware: Processing request from origin: {origin}")
-        
+
         # Handle preflight requests
         if request.method == "OPTIONS":
             print(f"🔧 CORS Middleware: Handling OPTIONS preflight request")
@@ -44,26 +51,31 @@ class SingleOriginCORSMiddleware(BaseHTTPMiddleware):
                 print(f"🔧 CORS Middleware: Origin {origin} is allowed")
                 response = Response()
                 response.headers["Access-Control-Allow-Origin"] = origin
-                response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+                response.headers["Access-Control-Allow-Methods"] = (
+                    "GET, POST, OPTIONS, PUT, DELETE"
+                )
                 response.headers["Access-Control-Allow-Headers"] = "*"
                 response.headers["Access-Control-Allow-Credentials"] = "false"
                 return response
             else:
                 print(f"🔧 CORS Middleware: Origin {origin} is NOT allowed")
-        
+
         response = await call_next(request)
-        
+
         # Only add CORS headers if origin is allowed
         if origin in ALLOWED_ORIGINS:
             print(f"🔧 CORS Middleware: Adding CORS headers for origin: {origin}")
             response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+            response.headers["Access-Control-Allow-Methods"] = (
+                "GET, POST, OPTIONS, PUT, DELETE"
+            )
             response.headers["Access-Control-Allow-Headers"] = "*"
             response.headers["Access-Control-Allow-Credentials"] = "false"
         else:
             print(f"🔧 CORS Middleware: NOT adding CORS headers for origin: {origin}")
-        
+
         return response
+
 
 # Add our custom CORS middleware
 app.add_middleware(SingleOriginCORSMiddleware)
@@ -106,7 +118,11 @@ def read_root():
     """
     Root endpoint to confirm the API is running.
     """
-    return {"message": "Class Scheduler is up!", "version": "2024-08-01-v2", "cors_middleware": "SingleOriginCORSMiddleware"}
+    return {
+        "message": "Class Scheduler is up!",
+        "version": "2024-08-01-v2",
+        "cors_middleware": "SingleOriginCORSMiddleware",
+    }
 
 
 @app.post("/api/v1/class-scheduler")
@@ -191,6 +207,13 @@ class PortfolioOptimalRequest(BaseModel):
 
 class PortfolioValidateRequest(BaseModel):
     schedule: List[dict]  # List of selected course sections
+
+
+# Dataset management models
+class DatasetRequest(BaseModel):
+    action: str  # "create" or "update"
+    dataset: dict
+    datasetId: Optional[str] = None
 
 
 @app.post("/api/generate-schedule")
@@ -400,44 +423,89 @@ async def portfolio_validate_schedule(
     }
 
 
+# Dataset Management Endpoints
+
+
 @app.get("/api/datasets")
 async def get_datasets(portfolio_key: str = Depends(verify_portfolio_auth)):
     """
     Portfolio endpoint to get available course datasets
     """
     print(
-        f"📱 Portfolio datasets request authenticated with key: {portfolio_key[:8]}..."
+        f"📱 Portfolio datasets GET request authenticated with key: {portfolio_key[:8]}..."
     )
 
-    # Return mock datasets for now - in production this would come from a database
-    datasets = [
-        {
-            "id": "software-dev-winter-2024",
-            "name": "Software Development - Winter 2024",
-            "program": "Software Development",
-            "term": "Winter 2024",
-            "courses": [
-                {
-                    "course": "COMM 238",
-                    "name": "Technical Communications I",
-                    "sections": [],
-                },
-                {
-                    "course": "CPNT 217",
-                    "name": "Introduction to Network Systems",
-                    "sections": [],
-                },
-                {"course": "CPRG 213", "name": "Web Development 1", "sections": []},
-                {
-                    "course": "CPRG 216",
-                    "name": "Object-Oriented Programming 1",
-                    "sections": [],
-                },
-            ],
-        }
-    ]
+    try:
+        datasets = await database.list_datasets()
+        return {"success": True, "datasets": datasets}
+    except Exception as e:
+        print(f"❌ Failed to list datasets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    return {"datasets": datasets}
+
+@app.post("/api/datasets")
+async def manage_datasets(
+    data: DatasetRequest, portfolio_key: str = Depends(verify_portfolio_auth)
+):
+    """
+    Portfolio endpoint to create or update datasets
+    """
+    print(
+        f"📱 Portfolio datasets POST request authenticated with key: {portfolio_key[:8]}..."
+    )
+
+    try:
+        if data.action == "create":
+            result = await database.save_dataset(data.dataset)
+            return result
+        elif data.action == "update" and data.datasetId:
+            result = await database.update_dataset(data.datasetId, data.dataset)
+            return result
+        else:
+            raise HTTPException(
+                status_code=400, detail="Invalid action or missing datasetId for update"
+            )
+    except Exception as e:
+        print(f"❌ Failed to manage dataset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/datasets/{dataset_id}")
+async def get_dataset(
+    dataset_id: str, portfolio_key: str = Depends(verify_portfolio_auth)
+):
+    """
+    Portfolio endpoint to get a specific dataset
+    """
+    print(
+        f"📱 Portfolio dataset GET request authenticated with key: {portfolio_key[:8]}..."
+    )
+
+    try:
+        dataset = await database.load_dataset(dataset_id)
+        return {"success": True, "dataset": dataset}
+    except Exception as e:
+        print(f"❌ Failed to load dataset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/datasets/{dataset_id}")
+async def delete_dataset(
+    dataset_id: str, portfolio_key: str = Depends(verify_portfolio_auth)
+):
+    """
+    Portfolio endpoint to delete a specific dataset
+    """
+    print(
+        f"📱 Portfolio dataset DELETE request authenticated with key: {portfolio_key[:8]}..."
+    )
+
+    try:
+        result = await database.delete_dataset(dataset_id)
+        return result
+    except Exception as e:
+        print(f"❌ Failed to delete dataset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
