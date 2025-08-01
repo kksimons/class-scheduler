@@ -46,10 +46,33 @@ jobs:
             
             # Create/update .env file with secrets
             cat > app/.env << 'ENVEOF'
-            TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
-            TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
-            API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
-            ENVEOF
+          TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
+          API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
+          ENVEOF
+
+                      # Update systemd service configuration
+                      sudo tee /etc/systemd/system/class-scheduler.service > /dev/null << 'SERVICEEOF'
+          [Unit]
+          Description=Class Scheduler FastAPI Application
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=kksimons
+          WorkingDirectory=/home/kksimons/class-scheduler
+          Environment=PATH=/home/kksimons/.local/bin:/usr/local/bin:/usr/bin:/bin
+          ExecStart=/home/kksimons/.local/bin/uvicorn app.app:app --host 0.0.0.0 --port 8502
+          Restart=always
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICEEOF
+
+            # Reload systemd and enable service
+            sudo systemctl daemon-reload
+            sudo systemctl enable class-scheduler.service
 
             # Kill any existing process and restart manually if sudo fails
             if ! sudo systemctl restart class-scheduler.service 2>/dev/null; then
