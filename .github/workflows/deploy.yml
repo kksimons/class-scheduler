@@ -13,21 +13,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Test SSH key format
+      - name: Setup SSH key
         run: |
-          echo "Testing SSH key format..."
-          echo "${{ secrets.VPS_SSH_KEY }}" | head -1
-          echo "${{ secrets.VPS_SSH_KEY }}" | tail -1
-          echo "Key length: $(echo '${{ secrets.VPS_SSH_KEY }}' | wc -c)"
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          debug: true
-          script: |
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} << 'EOF'
             # Create app directory if it doesn't exist
             mkdir -p /home/kksimons/class-scheduler
             cd /home/kksimons/class-scheduler
@@ -64,3 +59,4 @@ jobs:
               free -h
               exit 1
             fi
+          EOF
