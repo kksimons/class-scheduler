@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
@@ -35,26 +35,33 @@ ALLOWED_ORIGINS = [
 class SingleOriginCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         origin = request.headers.get("origin")
+        print(f"🔧 CORS Middleware: Processing request from origin: {origin}")
         
         # Handle preflight requests
         if request.method == "OPTIONS":
+            print(f"🔧 CORS Middleware: Handling OPTIONS preflight request")
             if origin in ALLOWED_ORIGINS:
-                from starlette.responses import Response
+                print(f"🔧 CORS Middleware: Origin {origin} is allowed")
                 response = Response()
                 response.headers["Access-Control-Allow-Origin"] = origin
                 response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
                 response.headers["Access-Control-Allow-Headers"] = "*"
                 response.headers["Access-Control-Allow-Credentials"] = "false"
                 return response
+            else:
+                print(f"🔧 CORS Middleware: Origin {origin} is NOT allowed")
         
         response = await call_next(request)
         
         # Only add CORS headers if origin is allowed
         if origin in ALLOWED_ORIGINS:
+            print(f"🔧 CORS Middleware: Adding CORS headers for origin: {origin}")
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
             response.headers["Access-Control-Allow-Headers"] = "*"
             response.headers["Access-Control-Allow-Credentials"] = "false"
+        else:
+            print(f"🔧 CORS Middleware: NOT adding CORS headers for origin: {origin}")
         
         return response
 
