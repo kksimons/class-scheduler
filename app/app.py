@@ -106,7 +106,7 @@ def read_root():
     """
     Root endpoint to confirm the API is running.
     """
-    return {"message": "Class Scheduler is up!"}
+    return {"message": "Class Scheduler is up!", "version": "2024-08-01-v2", "cors_middleware": "SingleOriginCORSMiddleware"}
 
 
 @app.post("/api/v1/class-scheduler")
