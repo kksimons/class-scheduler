@@ -80,6 +80,8 @@ jobs:
               pkill -f "uvicorn.*app:app" || true
               sleep 2
               cd /home/kksimons/class-scheduler
+              # Export environment variables from .env file before starting
+              export $(cat app/.env | grep -v '^#' | xargs)
               nohup python3 -m uvicorn app.app:app --host 0.0.0.0 --port 8502 > /dev/null 2>&1 &
               sleep 3
             fi
