@@ -30,7 +30,6 @@ app.add_middleware(
         "http://127.0.0.1:4321",  # Alternative local
         "https://kylesimons.ca",  # Production portfolio domain
         "https://www.kylesimons.ca",  # Include www subdomain
-        "https://kksimons-portfolio-2025-36.deno.dev",  # Deno deploy stable URL
     ],
     allow_credentials=False,  # Portfolio auth doesn't use credentials
     allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"],
@@ -374,8 +373,10 @@ async def get_datasets(portfolio_key: str = Depends(verify_portfolio_auth)):
     """
     Portfolio endpoint to get available course datasets
     """
-    print(f"📱 Portfolio datasets request authenticated with key: {portfolio_key[:8]}...")
-    
+    print(
+        f"📱 Portfolio datasets request authenticated with key: {portfolio_key[:8]}..."
+    )
+
     # Return mock datasets for now - in production this would come from a database
     datasets = [
         {
@@ -387,27 +388,23 @@ async def get_datasets(portfolio_key: str = Depends(verify_portfolio_auth)):
                 {
                     "course": "COMM 238",
                     "name": "Technical Communications I",
-                    "sections": []
+                    "sections": [],
                 },
                 {
-                    "course": "CPNT 217", 
+                    "course": "CPNT 217",
                     "name": "Introduction to Network Systems",
-                    "sections": []
+                    "sections": [],
                 },
-                {
-                    "course": "CPRG 213",
-                    "name": "Web Development 1", 
-                    "sections": []
-                },
+                {"course": "CPRG 213", "name": "Web Development 1", "sections": []},
                 {
                     "course": "CPRG 216",
                     "name": "Object-Oriented Programming 1",
-                    "sections": []
-                }
-            ]
+                    "sections": [],
+                },
+            ],
         }
     ]
-    
+
     return {"datasets": datasets}
 
 
