@@ -30,7 +30,7 @@ app.add_middleware(
         "http://127.0.0.1:4321",  # Alternative local
         "https://kylesimons.ca",  # Production portfolio domain
         "https://www.kylesimons.ca",  # Include www subdomain
-        "*",  # Allow all origins for development - remove in production
+        "https://kksimons-portfolio-2025-36.deno.dev",  # Deno deploy stable URL
     ],
     allow_credentials=False,  # Portfolio auth doesn't use credentials
     allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"],
@@ -216,40 +216,39 @@ async def portfolio_optimal_schedules(
     requested_count = data.count or 5
 
     schedules = []
-    
+
     # Generate multiple schedule variations by trying different approaches
     variation_configs = [
-        {"exclude_weekend": True, "time_limit": 30},   # Optimal with full time
-        {"exclude_weekend": True, "time_limit": 15},   # Faster search
+        {"exclude_weekend": True, "time_limit": 30},  # Optimal with full time
+        {"exclude_weekend": True, "time_limit": 15},  # Faster search
         {"exclude_weekend": False, "time_limit": 20},  # Include weekends
-        {"exclude_weekend": True, "time_limit": 10},   # Quick search
+        {"exclude_weekend": True, "time_limit": 10},  # Quick search
         {"exclude_weekend": False, "time_limit": 10},  # Quick with weekends
     ]
-    
+
     generated_schedules = set()  # Track unique schedules to avoid duplicates
-    
+
     for i, config in enumerate(variation_configs[:requested_count]):
         try:
-            print(f"🔄 Generating variation {i+1} with config: {config}")
-            
+            print(f"🔄 Generating variation {i + 1} with config: {config}")
+
             # Try optimal scheduler first
             try:
                 optimal_schedule, best_score = generate_optimal_schedule(
-                    courses, 
-                    exclude_weekend=config["exclude_weekend"]
+                    courses, exclude_weekend=config["exclude_weekend"]
                 )
             except Exception as e:
                 print(f"Optimal scheduler failed: {e}")
                 optimal_schedule = None
-            
+
             # If optimal scheduler fails, fall back to dumb scheduler
             if not optimal_schedule:
                 optimal_schedule, best_score = generate_dumb_schedule(
                     courses,
                     exclude_weekend=config["exclude_weekend"],
-                    time_limit=config.get("time_limit", 30)
+                    time_limit=config.get("time_limit", 30),
                 )
-            
+
             if optimal_schedule:
                 # Create a signature for this schedule to detect duplicates
                 schedule_signature = []
@@ -258,11 +257,11 @@ async def portfolio_optimal_schedules(
                     schedule_signature.append(signature_part)
                 schedule_signature = sorted(schedule_signature)
                 signature_str = "|".join(schedule_signature)
-                
+
                 # Only add if it's unique
                 if signature_str not in generated_schedules:
                     generated_schedules.add(signature_str)
-                    
+
                     # Convert to portfolio format
                     selections = []
                     for section_data in optimal_schedule:
@@ -294,20 +293,20 @@ async def portfolio_optimal_schedules(
                             if isinstance(best_score, (list, tuple))
                             else best_score,
                             "variation": i + 1,
-                            "config": config
+                            "config": config,
                         }
                     )
-                    
-                    print(f"✅ Generated unique variation {i+1}")
+
+                    print(f"✅ Generated unique variation {i + 1}")
                 else:
-                    print(f"⚠️ Variation {i+1} was duplicate, skipping")
+                    print(f"⚠️ Variation {i + 1} was duplicate, skipping")
             else:
-                print(f"❌ Failed to generate variation {i+1}")
-                
+                print(f"❌ Failed to generate variation {i + 1}")
+
         except Exception as e:
-            print(f"❌ Error generating variation {i+1}: {e}")
+            print(f"❌ Error generating variation {i + 1}: {e}")
             continue
-    
+
     # If we don't have enough unique schedules, pad with the best one we have
     if len(schedules) == 1 and requested_count > 1:
         base_schedule = schedules[0]
@@ -368,6 +367,48 @@ async def portfolio_validate_schedule(
         "conflicts": conflicts,
         "message": f"Validation complete. {len(conflicts)} conflicts found.",
     }
+
+
+@app.get("/api/datasets")
+async def get_datasets(portfolio_key: str = Depends(verify_portfolio_auth)):
+    """
+    Portfolio endpoint to get available course datasets
+    """
+    print(f"📱 Portfolio datasets request authenticated with key: {portfolio_key[:8]}...")
+    
+    # Return mock datasets for now - in production this would come from a database
+    datasets = [
+        {
+            "id": "software-dev-winter-2024",
+            "name": "Software Development - Winter 2024",
+            "program": "Software Development",
+            "term": "Winter 2024",
+            "courses": [
+                {
+                    "course": "COMM 238",
+                    "name": "Technical Communications I",
+                    "sections": []
+                },
+                {
+                    "course": "CPNT 217", 
+                    "name": "Introduction to Network Systems",
+                    "sections": []
+                },
+                {
+                    "course": "CPRG 213",
+                    "name": "Web Development 1", 
+                    "sections": []
+                },
+                {
+                    "course": "CPRG 216",
+                    "name": "Object-Oriented Programming 1",
+                    "sections": []
+                }
+            ]
+        }
+    ]
+    
+    return {"datasets": datasets}
 
 
 if __name__ == "__main__":
