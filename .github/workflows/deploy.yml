@@ -37,14 +37,25 @@ jobs:
             # Install Python dependencies with --break-system-packages
             python3 -m pip install --user --break-system-packages -r app/requirements.txt
 
-            # Restart the systemd service (passwordless sudo required)
-            sudo systemctl restart class-scheduler.service
+            # Kill any existing process and restart manually if sudo fails
+            if ! sudo systemctl restart class-scheduler.service 2>/dev/null; then
+              echo "Sudo restart failed, trying manual process management..."
+              pkill -f "uvicorn.*app:app" || true
+              sleep 2
+              cd /home/kksimons/class-scheduler
+              nohup python3 -m uvicorn app.app:app --host 0.0.0.0 --port 8502 > /dev/null 2>&1 &
+              sleep 3
+            fi
 
-            # Wait a moment and check if it's running
-            sleep 3
-            if sudo systemctl is-active --quiet class-scheduler.service; then
-              echo "FastAPI app started successfully"
-              sudo systemctl status class-scheduler.service --no-pager
+            # Check if it's running (try both systemd and manual process)
+            if sudo systemctl is-active --quiet class-scheduler.service 2>/dev/null || pgrep -f "uvicorn.*app:app" > /dev/null; then
+              echo "FastAPI app is running successfully"
+              if sudo systemctl status class-scheduler.service --no-pager 2>/dev/null; then
+                echo "Running via systemd"
+              else
+                echo "Running as manual process:"
+                pgrep -f "uvicorn.*app:app" && echo "Process found"
+              fi
               echo ""
               echo "Memory status after deployment:"
               free -h
@@ -53,7 +64,12 @@ jobs:
               sudo swapon --show || echo "No swap configured"
             else
               echo "Failed to start FastAPI app"
-              sudo journalctl -u class-scheduler.service --no-pager -n 10
+              if sudo journalctl -u class-scheduler.service --no-pager -n 10 2>/dev/null; then
+                echo "Systemd logs shown above"
+              else
+                echo "Could not access systemd logs, checking for any running processes..."
+                ps aux | grep -E "(uvicorn|fastapi)" | grep -v grep || echo "No related processes found"
+              fi
               echo ""
               echo "Memory status:"
               free -h
