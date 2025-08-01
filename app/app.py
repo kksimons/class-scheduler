@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
@@ -21,20 +22,44 @@ app = FastAPI()
 # Get API secret key from environment
 API_SECRET_KEY = os.getenv("API_SECRET_KEY")
 
-# Enable CORS for specific origins (portfolio domain)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:4321",  # Portfolio dev server
-        "http://127.0.0.1:4321",  # Alternative local
-        "https://kylesimons.ca",  # Production portfolio domain
-        "https://www.kylesimons.ca",  # Include www subdomain
-    ],
-    allow_credentials=False,  # Portfolio auth doesn't use credentials
-    allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"],
-    allow_headers=["*"],
-)
+# Define allowed origins
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:4321",  # Portfolio dev server
+    "http://127.0.0.1:4321",  # Alternative local
+    "https://kylesimons.ca",  # Production portfolio domain
+    "https://www.kylesimons.ca",  # Include www subdomain
+    "https://kksimons-portfolio-2025-36.deno.dev",  # Deno deploy stable URL
+]
+
+class SingleOriginCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        origin = request.headers.get("origin")
+        
+        # Handle preflight requests
+        if request.method == "OPTIONS":
+            if origin in ALLOWED_ORIGINS:
+                from starlette.responses import Response
+                response = Response()
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+                response.headers["Access-Control-Allow-Headers"] = "*"
+                response.headers["Access-Control-Allow-Credentials"] = "false"
+                return response
+        
+        response = await call_next(request)
+        
+        # Only add CORS headers if origin is allowed
+        if origin in ALLOWED_ORIGINS:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+            response.headers["Access-Control-Allow-Credentials"] = "false"
+        
+        return response
+
+# Add our custom CORS middleware
+app.add_middleware(SingleOriginCORSMiddleware)
 
 
 def verify_api_key(x_api_key: str = Header(None)):
