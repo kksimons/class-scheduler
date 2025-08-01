@@ -38,6 +38,11 @@ jobs:
 
             # Install Python dependencies with --break-system-packages
             python3 -m pip install --user --break-system-packages -r app/requirements.txt
+            
+            # Ensure all dependencies are properly installed
+            echo "Verifying critical dependencies..."
+            python3 -c "import libsql_client; print('✅ libsql_client installed')" || echo "❌ libsql_client missing"
+            python3 -c "import fastapi; print('✅ fastapi installed')" || echo "❌ fastapi missing"
 
             # Kill any existing process and restart manually if sudo fails
             if ! sudo systemctl restart class-scheduler.service 2>/dev/null; then
