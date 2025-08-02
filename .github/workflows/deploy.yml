@@ -154,7 +154,7 @@ jobs:
             
             # Check environment variables are loaded
             echo "   🔍 Verifying environment variables..."
-            if cat /proc/$PID/environ | tr '\0' '\n' | grep -q "TURSO_DATABASE_URL"; then
+            if [ -n "$PID" ] && cat /proc/$PID/environ 2>/dev/null | tr '\0' '\n' | grep -q "TURSO_DATABASE_URL"; then
               echo "   ✅ Environment variables loaded"
             else
               echo "   ❌ Environment variables missing"

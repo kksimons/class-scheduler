@@ -203,10 +203,17 @@ class PortfolioScheduleRequest(BaseModel):
 class PortfolioOptimalRequest(BaseModel):
     courses: List[Course]
     count: Optional[int] = 5
+    preferences: Optional[dict] = {}
 
 
 class PortfolioValidateRequest(BaseModel):
     schedule: List[dict]  # List of selected course sections
+
+
+class ShareScheduleRequest(BaseModel):
+    schedule: List[dict]  # Schedule data to share
+    metadata: Optional[dict] = {}  # Additional metadata (program, term, etc.)
+    alias: Optional[str] = None  # Custom alias for shorter URLs
 
 
 # Dataset management models
@@ -268,16 +275,18 @@ async def portfolio_optimal_schedules(
 
     courses = [course.dict() for course in data.courses]
     requested_count = data.count or 5
+    user_exclude_weekend = data.preferences.get("exclude_weekend", True)
 
     schedules = []
 
     # Generate multiple schedule variations by trying different approaches
+    # Use user's weekend preference as the primary option, then try opposite as variation
     variation_configs = [
-        {"exclude_weekend": True, "time_limit": 30},  # Optimal with full time
-        {"exclude_weekend": True, "time_limit": 15},  # Faster search
-        {"exclude_weekend": False, "time_limit": 20},  # Include weekends
-        {"exclude_weekend": True, "time_limit": 10},  # Quick search
-        {"exclude_weekend": False, "time_limit": 10},  # Quick with weekends
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 30},  # User preference with full time
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 15},  # User preference with faster search
+        {"exclude_weekend": not user_exclude_weekend, "time_limit": 20},  # Opposite preference as variation
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 10},  # User preference with quick search
+        {"exclude_weekend": not user_exclude_weekend, "time_limit": 10},  # Opposite preference quick
     ]
 
     generated_schedules = set()  # Track unique schedules to avoid duplicates
@@ -505,6 +514,50 @@ async def delete_dataset(
         return result
     except Exception as e:
         print(f"❌ Failed to delete dataset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/share-schedule")
+async def share_schedule(
+    data: ShareScheduleRequest, portfolio_key: str = Depends(verify_portfolio_auth)
+):
+    """
+    Portfolio endpoint to share a schedule
+    """
+    print(
+        f"📱 Portfolio share schedule request authenticated with key: {portfolio_key[:8]}..."
+    )
+
+    try:
+        result = await database.save_shared_schedule(
+            schedule_data=data.schedule,
+            metadata=data.metadata,
+            expires_in_days=30,  # Expire after 30 days
+            alias=data.alias
+        )
+        return result
+    except Exception as e:
+        print(f"❌ Failed to share schedule: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/shared-schedule/{share_id}")
+async def get_shared_schedule(share_id: str):
+    """
+    Public endpoint to get a shared schedule (no auth required)
+    """
+    print(f"📱 Getting shared schedule: {share_id}")
+
+    try:
+        result = await database.get_shared_schedule(share_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Shared schedule not found or expired")
+        
+        return {"success": True, "data": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Failed to get shared schedule: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

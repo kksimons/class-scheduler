@@ -2,7 +2,7 @@
 import os
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from libsql_client import create_client
 
@@ -71,6 +71,28 @@ class SchedulerDatabase:
             # Create index for better performance
             await self.client.execute("""
                 CREATE INDEX IF NOT EXISTS idx_courses_dataset_id ON courses (dataset_id)
+            """)
+
+            # Create shared_schedules table
+            await self.client.execute("""
+                CREATE TABLE IF NOT EXISTS shared_schedules (
+                    id TEXT PRIMARY KEY,
+                    alias TEXT UNIQUE,
+                    schedule_data TEXT NOT NULL,
+                    metadata TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME,
+                    view_count INTEGER DEFAULT 0
+                )
+            """)
+
+            # Create index for shared schedules
+            await self.client.execute("""
+                CREATE INDEX IF NOT EXISTS idx_shared_schedules_created ON shared_schedules (created_at)
+            """)
+
+            await self.client.execute("""
+                CREATE INDEX IF NOT EXISTS idx_shared_schedules_alias ON shared_schedules (alias)
             """)
 
             print('✅ Database tables created/verified')
@@ -300,4 +322,92 @@ class SchedulerDatabase:
 
         except Exception as error:
             print(f'❌ Failed to delete dataset: {error}')
+            raise error
+
+    async def save_shared_schedule(self, schedule_data, metadata=None, expires_in_days=30, alias=None):
+        """Save a shared schedule to the database"""
+        if not self.is_initialized:
+            await self.initialize_database()
+
+        try:
+            share_id = self.generate_id()
+            now = datetime.now()
+            expires_at = now + timedelta(days=expires_in_days) if expires_in_days else None
+
+            # Validate alias if provided
+            if alias:
+                # Check if alias already exists
+                existing = await self.client.execute(
+                    'SELECT id FROM shared_schedules WHERE alias = ?',
+                    [alias]
+                )
+                if existing.rows:
+                    raise Exception(f'Alias "{alias}" is already taken. Please choose a different one.')
+                
+                # Validate alias format (alphanumeric, hyphens, underscores, 3-50 chars)
+                import re
+                if not re.match(r'^[a-zA-Z0-9_-]{3,50}$', alias):
+                    raise Exception('Alias must be 3-50 characters and contain only letters, numbers, hyphens, and underscores.')
+
+            await self.client.execute(
+                "INSERT INTO shared_schedules (id, alias, schedule_data, metadata, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    share_id,
+                    alias,
+                    json.dumps(schedule_data),
+                    json.dumps(metadata) if metadata else None,
+                    now.isoformat(),
+                    expires_at.isoformat() if expires_at else None
+                ]
+            )
+
+            share_key = alias if alias else share_id
+            print(f'✅ Shared schedule saved: {share_key} (ID: {share_id})')
+            return {'success': True, 'shareId': share_id, 'shareKey': share_key}
+
+        except Exception as error:
+            print(f'❌ Failed to save shared schedule: {error}')
+            raise error
+
+    async def get_shared_schedule(self, share_key):
+        """Get a shared schedule by ID or alias"""
+        if not self.is_initialized:
+            await self.initialize_database()
+
+        try:
+            # Try to find by ID first, then by alias
+            result = await self.client.execute(
+                'SELECT * FROM shared_schedules WHERE id = ? OR alias = ?',
+                [share_key, share_key]
+            )
+
+            if not result.rows:
+                return None
+
+            row = result.rows[0]
+
+            # Check if expired
+            if row['expires_at']:
+                expires_at = datetime.fromisoformat(row['expires_at'])
+                if datetime.now() > expires_at:
+                    return None
+
+            # Increment view count
+            await self.client.execute(
+                'UPDATE shared_schedules SET view_count = view_count + 1 WHERE id = ?',
+                [row['id']]
+            )
+
+            return {
+                'id': row['id'],
+                'alias': row['alias'],
+                'scheduleData': json.loads(row['schedule_data']),
+                'metadata': json.loads(row['metadata']) if row['metadata'] else None,
+                'createdAt': row['created_at'],
+                'expiresAt': row['expires_at'],
+                'viewCount': row['view_count'] + 1
+            }
+
+        except Exception as error:
+            print(f'❌ Failed to get shared schedule: {error}')
             raise error
