@@ -651,21 +651,21 @@ async def admin_rename_dataset(
     print(f"🔐 Admin rename dataset request for: {dataset_id}")
 
     try:
+        # Ensure database is initialized
+        if not database.is_initialized:
+            await database.initialize_database()
+
         # First check if dataset exists
         await database.load_dataset(dataset_id)
 
         # Update the dataset name in the database
-        # Since the database.py doesn't have a direct rename method,
-        # we'll use the client directly
         from datetime import datetime
 
         now_iso = datetime.utcnow().isoformat()
 
         await database.client.execute(
-            {
-                "sql": "UPDATE datasets SET name = ?, updated_at = ? WHERE id = ?",
-                "args": [data.name.strip()[:255], now_iso, dataset_id],
-            }
+            "UPDATE datasets SET name = ?, updated_at = ? WHERE id = ?",
+            [data.name.strip()[:255], now_iso, dataset_id]
         )
 
         return {"success": True, "message": "Dataset renamed successfully"}
