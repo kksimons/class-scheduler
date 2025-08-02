@@ -27,6 +27,7 @@ database = SchedulerDatabase()
 
 # Get API secret key from environment
 API_SECRET_KEY = os.getenv("API_SECRET_KEY")
+SCHEDULER_ADMIN_PASSWORD = os.getenv("SCHEDULER_ADMIN_PASSWORD")
 
 # Define allowed origins
 ALLOWED_ORIGINS = [
@@ -85,6 +86,29 @@ def verify_api_key(x_api_key: str = Header(None)):
     if not x_api_key or x_api_key != API_SECRET_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
     return x_api_key
+
+
+def verify_admin_auth(
+    portfolio_key: str = Depends(verify_portfolio_auth),
+    x_admin_password: str = Header(None),
+):
+    """
+    Verify both portfolio authentication and admin password
+    """
+    if not x_admin_password:
+        raise HTTPException(
+            status_code=401, detail="Missing admin password header (X-Admin-Password)"
+        )
+
+    if not SCHEDULER_ADMIN_PASSWORD:
+        raise HTTPException(
+            status_code=500, detail="Admin password not configured on server"
+        )
+
+    if x_admin_password != SCHEDULER_ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid admin password")
+
+    return {"portfolio_key": portfolio_key, "admin_authenticated": True}
 
 
 # Define Pydantic models for data validation and parsing
@@ -276,19 +300,41 @@ async def portfolio_optimal_schedules(
     courses = [course.dict() for course in data.courses]
     requested_count = data.count or 5
     user_exclude_weekend = data.preferences.get("exclude_weekend", True)
-    
-    print(f"📅 User preferences: exclude_weekend={user_exclude_weekend}, requested_count={requested_count}")
+
+    print(
+        f"📅 User preferences: exclude_weekend={user_exclude_weekend}, requested_count={requested_count}"
+    )
 
     schedules = []
 
     # Generate multiple schedule variations by trying different approaches
     # Create more diverse variations by using different strategies
     variation_configs = [
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 30, "strategy": "optimal"},     # Primary optimal solution
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 15, "strategy": "dumb"},       # Fast alternative using dumb scheduler
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 25, "strategy": "optimal"},    # Secondary optimal with different timeout
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 8, "strategy": "dumb"},        # Quick dumb scheduler variation
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 12, "strategy": "dumb"},       # Medium dumb scheduler variation
+        {
+            "exclude_weekend": user_exclude_weekend,
+            "time_limit": 30,
+            "strategy": "optimal",
+        },  # Primary optimal solution
+        {
+            "exclude_weekend": user_exclude_weekend,
+            "time_limit": 15,
+            "strategy": "dumb",
+        },  # Fast alternative using dumb scheduler
+        {
+            "exclude_weekend": user_exclude_weekend,
+            "time_limit": 25,
+            "strategy": "optimal",
+        },  # Secondary optimal with different timeout
+        {
+            "exclude_weekend": user_exclude_weekend,
+            "time_limit": 8,
+            "strategy": "dumb",
+        },  # Quick dumb scheduler variation
+        {
+            "exclude_weekend": user_exclude_weekend,
+            "time_limit": 12,
+            "strategy": "dumb",
+        },  # Medium dumb scheduler variation
     ]
 
     generated_schedules = set()  # Track unique schedules to avoid duplicates
@@ -300,7 +346,7 @@ async def portfolio_optimal_schedules(
             # Use the specified strategy
             optimal_schedule = None
             best_score = None
-            
+
             if config.get("strategy") == "optimal":
                 # Try optimal scheduler first
                 try:
@@ -316,14 +362,18 @@ async def portfolio_optimal_schedules(
             if not optimal_schedule or config.get("strategy") == "dumb":
                 try:
                     # Use randomization for dumb scheduler variations to get different results
-                    use_randomization = i > 0  # First one uses normal order, rest are randomized
+                    use_randomization = (
+                        i > 0
+                    )  # First one uses normal order, rest are randomized
                     optimal_schedule, best_score = generate_dumb_schedule(
                         courses,
                         exclude_weekend=config["exclude_weekend"],
                         time_limit=config.get("time_limit", 30),
-                        randomize=use_randomization
+                        randomize=use_randomization,
                     )
-                    print(f"✅ Dumb scheduler succeeded for variation {i + 1} (randomized: {use_randomization})")
+                    print(
+                        f"✅ Dumb scheduler succeeded for variation {i + 1} (randomized: {use_randomization})"
+                    )
                 except Exception as e:
                     print(f"❌ Dumb scheduler failed for variation {i + 1}: {e}")
                     optimal_schedule = None
@@ -552,7 +602,7 @@ async def share_schedule(
             schedule_data=data.schedule,
             metadata=data.metadata,
             expires_in_days=30,  # Expire after 30 days
-            alias=data.alias
+            alias=data.alias,
         )
         return result
     except Exception as e:
@@ -570,13 +620,109 @@ async def get_shared_schedule(share_id: str):
     try:
         result = await database.get_shared_schedule(share_id)
         if result is None:
-            raise HTTPException(status_code=404, detail="Shared schedule not found or expired")
-        
+            raise HTTPException(
+                status_code=404, detail="Shared schedule not found or expired"
+            )
+
         return {"success": True, "data": result}
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ Failed to get shared schedule: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Admin-only endpoints (require both portfolio auth + admin password)
+
+
+class AdminDatasetRenameRequest(BaseModel):
+    name: str
+
+
+@app.put("/api/admin/datasets/{dataset_id}/rename")
+async def admin_rename_dataset(
+    dataset_id: str,
+    data: AdminDatasetRenameRequest,
+    auth: dict = Depends(verify_admin_auth),
+):
+    """
+    Admin endpoint to rename a dataset
+    """
+    print(f"🔐 Admin rename dataset request for: {dataset_id}")
+
+    try:
+        # First check if dataset exists
+        await database.load_dataset(dataset_id)
+
+        # Update the dataset name in the database
+        # Since the database.py doesn't have a direct rename method,
+        # we'll use the client directly
+        from datetime import datetime
+
+        now_iso = datetime.utcnow().isoformat()
+
+        await database.client.execute(
+            {
+                "sql": "UPDATE datasets SET name = ?, updated_at = ? WHERE id = ?",
+                "args": [data.name.strip()[:255], now_iso, dataset_id],
+            }
+        )
+
+        return {"success": True, "message": "Dataset renamed successfully"}
+
+    except Exception as e:
+        print(f"❌ Failed to rename dataset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/datasets/{dataset_id}")
+async def admin_delete_dataset(
+    dataset_id: str, auth: dict = Depends(verify_admin_auth)
+):
+    """
+    Admin endpoint to delete a dataset
+    """
+    print(f"🔐 Admin delete dataset request for: {dataset_id}")
+
+    try:
+        result = await database.delete_dataset(dataset_id)
+        return result
+    except Exception as e:
+        print(f"❌ Failed to delete dataset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/datasets/{dataset_id}/links")
+async def admin_get_dataset_links(
+    dataset_id: str, auth: dict = Depends(verify_admin_auth)
+):
+    """
+    Admin endpoint to get shareable links for a dataset
+    """
+    print(f"🔐 Admin get dataset links request for: {dataset_id}")
+
+    try:
+        # First verify dataset exists
+        dataset = await database.load_dataset(dataset_id)
+
+        # For now, just return the direct dataset link
+        # In the future, you could add actual shareable link management
+        base_url = "https://kylesimons.ca"  # Or get from environment
+        direct_link = f"{base_url}/scheduler?dataset={dataset_id}"
+
+        return {
+            "success": True,
+            "links": [
+                {
+                    "type": "dataset",
+                    "url": direct_link,
+                    "description": f"Direct link to {dataset['name']} dataset",
+                }
+            ],
+        }
+
+    except Exception as e:
+        print(f"❌ Failed to get dataset links: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
