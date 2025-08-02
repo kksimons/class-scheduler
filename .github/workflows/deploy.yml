@@ -59,18 +59,27 @@ jobs:
             echo "🚀 Starting deployment to $(hostname) at $(date)"
             echo "==============================================="
             
-            # Verify SSH key is still in authorized_keys
+            # Verify and restore SSH key authorization
             echo "🔐 Verifying SSH key authorization..."
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            
             if [ -f ~/.ssh/authorized_keys ]; then
               KEY_COUNT=$(wc -l < ~/.ssh/authorized_keys)
               echo "   - Found $KEY_COUNT authorized keys"
               if grep -q "github-actions-deploy" ~/.ssh/authorized_keys; then
                 echo "   ✅ GitHub Actions key found in authorized_keys"
               else
-                echo "   ⚠️  GitHub Actions key not found, this might cause future deployment issues"
+                echo "   ⚠️  GitHub Actions key missing, adding it back..."
+                echo "${{ secrets.VPS_SSH_PUBLIC_KEY }}" >> ~/.ssh/authorized_keys
+                chmod 600 ~/.ssh/authorized_keys
+                echo "   ✅ GitHub Actions key restored"
               fi
             else
-              echo "   ⚠️  No authorized_keys file found!"
+              echo "   ⚠️  No authorized_keys file found, creating it..."
+              echo "${{ secrets.VPS_SSH_PUBLIC_KEY }}" > ~/.ssh/authorized_keys
+              chmod 600 ~/.ssh/authorized_keys
+              echo "   ✅ authorized_keys file created with GitHub Actions key"
             fi
             
             # Create app directory if it doesn't exist
