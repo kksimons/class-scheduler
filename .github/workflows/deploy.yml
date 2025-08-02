@@ -17,14 +17,14 @@ jobs:
         run: |
           echo "🔑 Setting up SSH key..."
           mkdir -p ~/.ssh
-          
+
           # Write SSH key and verify format
           cat > ~/.ssh/deploy_key << 'EOF'
           ${{ secrets.VPS_SSH_KEY }}
           EOF
-          
+
           chmod 600 ~/.ssh/deploy_key
-          
+
           # Verify key format
           echo "🔍 Verifying SSH key format..."
           if ssh-keygen -l -f ~/.ssh/deploy_key; then
@@ -33,11 +33,11 @@ jobs:
             echo "❌ SSH key format is invalid!"
             exit 1
           fi
-          
+
           # Add host to known_hosts
           echo "🌐 Adding host to known_hosts..."
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
-          
+
           # Test SSH connection
           echo "🔌 Testing SSH connection..."
           if ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} "echo 'SSH connection successful'"; then
@@ -54,131 +54,131 @@ jobs:
       - name: Deploy to VPS
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} << 'EOF'
-            set -e  # Exit on any error
-            
-            echo "🚀 Starting deployment to $(hostname) at $(date)"
-            echo "==============================================="
-            
-            # Always ensure SSH key is in authorized_keys for future deployments
-            echo "🔐 Ensuring SSH key authorization for future deployments..."
-            mkdir -p ~/.ssh
-            chmod 700 ~/.ssh
-            
-            # Always add the key (remove duplicates first)
-            grep -v "github-actions-deploy" ~/.ssh/authorized_keys 2>/dev/null > ~/.ssh/authorized_keys.tmp || true
-            echo "${{ secrets.VPS_SSH_PUBLIC_KEY }}" >> ~/.ssh/authorized_keys.tmp
-            mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
-            chmod 600 ~/.ssh/authorized_keys
-            
-            KEY_COUNT=$(wc -l < ~/.ssh/authorized_keys)
-            echo "   ✅ SSH key restored - $KEY_COUNT total keys in authorized_keys"
-            
-            # Create app directory if it doesn't exist
-            echo "📁 Setting up application directory..."
-            mkdir -p /home/kksimons/class-scheduler
-            cd /home/kksimons/class-scheduler
+          set -e  # Exit on any error
 
-            # Clone or update repository
-            echo "📦 Updating code repository..."
-            if [ -d ".git" ]; then
-              echo "   - Git repository exists, pulling latest changes..."
-              git pull origin main || git pull origin master
+          echo "🚀 Starting deployment to $(hostname) at $(date)"
+          echo "==============================================="
+
+          # Always ensure SSH key is in authorized_keys for future deployments
+          echo "🔐 Ensuring SSH key authorization for future deployments..."
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          # Always add the key (remove duplicates first)
+          grep -v "github-actions-deploy" ~/.ssh/authorized_keys 2>/dev/null > ~/.ssh/authorized_keys.tmp || true
+          echo "${{ secrets.VPS_SSH_PUBLIC_KEY }}" >> ~/.ssh/authorized_keys.tmp
+          mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+
+          KEY_COUNT=$(wc -l < ~/.ssh/authorized_keys)
+          echo "   ✅ SSH key restored - $KEY_COUNT total keys in authorized_keys"
+
+          # Create app directory if it doesn't exist
+          echo "📁 Setting up application directory..."
+          mkdir -p /home/kksimons/class-scheduler
+          cd /home/kksimons/class-scheduler
+
+          # Clone or update repository
+          echo "📦 Updating code repository..."
+          if [ -d ".git" ]; then
+            echo "   - Git repository exists, pulling latest changes..."
+            git pull origin main || git pull origin master
+          else
+            echo "   - Cloning repository for first time..."
+            git clone https://github.com/kksimons/class-scheduler.git .
+          fi
+
+          echo "   - Current commit: $(git rev-parse --short HEAD)"
+          echo "   - Last commit message: $(git log -1 --pretty=%B | head -1)"
+
+          # Install Python dependencies
+          echo "📚 Installing Python dependencies..."
+          python3 -m pip install --user --break-system-packages -r app/requirements.txt
+
+          # Verify critical dependencies
+          echo "🔍 Verifying critical dependencies..."
+          python3 -c "import libsql_client; print('   ✅ libsql_client installed')" || echo "   ❌ libsql_client missing"
+          python3 -c "import fastapi; print('   ✅ fastapi installed')" || echo "   ❌ fastapi missing"
+          python3 -c "import uvicorn; print('   ✅ uvicorn installed')" || echo "   ❌ uvicorn missing"
+
+          # Create/update .env file with secrets
+          echo "⚙️  Creating environment configuration..."
+          cat > app/.env << 'ENVEOF'
+          TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
+          API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
+          ENVEOF
+          echo "   - Environment file created with $(wc -l < app/.env) variables"
+
+          # Stop existing processes first
+          echo "🛑 Stopping existing processes..."
+          pkill -f "uvicorn.*app:app" 2>/dev/null || echo "   - No manual processes to kill"
+          sleep 2
+
+          # Start the service manually (bypassing systemd due to sudo restrictions)
+          echo "▶️  Starting class-scheduler service manually..."
+          cd /home/kksimons/class-scheduler/app
+
+          # Export environment variables from .env file
+          export $(cat .env | grep -v '^#' | xargs)
+
+          # Start the service in background with logging
+          nohup python3 -m uvicorn app:app --host 0.0.0.0 --port 8502 > app.log 2>&1 &
+          echo "   📝 Service started manually, logs in app.log"
+          sleep 5  # Give service time to start
+
+          # Comprehensive status check
+          echo "🔍 Verifying deployment status..."
+          echo "----------------------------------------"
+
+          # Check if process is running
+          if PID=$(pgrep -f "uvicorn.*app:app"); then
+            echo "   ✅ Process running with PID: $PID"
+            
+            # Check which port it's listening on
+            if netstat -tlnp 2>/dev/null | grep ":8502" | grep "$PID" >/dev/null; then
+              echo "   ✅ Service listening on port 8502"
             else
-              echo "   - Cloning repository for first time..."
-              git clone https://github.com/kksimons/class-scheduler.git .
+              echo "   ❌ Service NOT listening on port 8502"
+              netstat -tlnp 2>/dev/null | grep "$PID" || echo "   - No listening ports found for process"
             fi
             
-            echo "   - Current commit: $(git rev-parse --short HEAD)"
-            echo "   - Last commit message: $(git log -1 --pretty=%B | head -1)"
-
-            # Install Python dependencies
-            echo "📚 Installing Python dependencies..."
-            python3 -m pip install --user --break-system-packages -r app/requirements.txt
-            
-            # Verify critical dependencies
-            echo "🔍 Verifying critical dependencies..."
-            python3 -c "import libsql_client; print('   ✅ libsql_client installed')" || echo "   ❌ libsql_client missing"
-            python3 -c "import fastapi; print('   ✅ fastapi installed')" || echo "   ❌ fastapi missing"
-            python3 -c "import uvicorn; print('   ✅ uvicorn installed')" || echo "   ❌ uvicorn missing"
-            
-            # Create/update .env file with secrets
-            echo "⚙️  Creating environment configuration..."
-            cat > app/.env << 'ENVEOF'
-TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
-TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
-API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
-ENVEOF
-            echo "   - Environment file created with $(wc -l < app/.env) variables"
-
-            # Stop existing processes first
-            echo "🛑 Stopping existing processes..."
-            pkill -f "uvicorn.*app:app" 2>/dev/null || echo "   - No manual processes to kill"
-            sleep 2
-
-            # Start the service manually (bypassing systemd due to sudo restrictions)
-            echo "▶️  Starting class-scheduler service manually..."
-            cd /home/kksimons/class-scheduler/app
-            
-            # Export environment variables from .env file
-            export $(cat .env | grep -v '^#' | xargs)
-            
-            # Start the service in background with logging
-            nohup python3 -m uvicorn app:app --host 0.0.0.0 --port 8502 > app.log 2>&1 &
-            echo "   📝 Service started manually, logs in app.log"
-            sleep 5  # Give service time to start
-
-            # Comprehensive status check
-            echo "🔍 Verifying deployment status..."
-            echo "----------------------------------------"
-            
-            # Check if process is running
-            if PID=$(pgrep -f "uvicorn.*app:app"); then
-              echo "   ✅ Process running with PID: $PID"
-              
-              # Check which port it's listening on
-              if netstat -tlnp 2>/dev/null | grep ":8502" | grep "$PID" >/dev/null; then
-                echo "   ✅ Service listening on port 8502"
-              else
-                echo "   ❌ Service NOT listening on port 8502"
-                netstat -tlnp 2>/dev/null | grep "$PID" || echo "   - No listening ports found for process"
-              fi
-              
-              # Test API endpoint
-              echo "   🌐 Testing API endpoint..."
-              if curl -s -f http://localhost:8502/ >/dev/null; then
-                echo "   ✅ API responding successfully"
-                curl -s http://localhost:8502/ | head -1
-              else
-                echo "   ❌ API not responding on localhost:8502"
-              fi
-              
-              # Check environment variables are loaded
-              echo "   🔍 Verifying environment variables..."
-              if cat /proc/$PID/environ | tr '\0' '\n' | grep -q "TURSO_DATABASE_URL"; then
-                echo "   ✅ Environment variables loaded"
-              else
-                echo "   ❌ Environment variables missing"
-              fi
-              
+            # Test API endpoint
+            echo "   🌐 Testing API endpoint..."
+            if curl -s -f http://localhost:8502/ >/dev/null; then
+              echo "   ✅ API responding successfully"
+              curl -s http://localhost:8502/ | head -1
             else
-              echo "   ❌ No uvicorn process found!"
-              echo "   📝 Checking recent logs..."
-              
-              if [ -f "/home/kksimons/class-scheduler/app/app.log" ]; then
-                echo "   📝 Manual process logs:"
-                tail -10 /home/kksimons/class-scheduler/app/app.log
-              fi
-              
-              exit 1
+              echo "   ❌ API not responding on localhost:8502"
             fi
-
-            # System resource check
-            echo "📊 System resources:"
-            echo "   Memory: $(free -h | grep Mem | awk '{print $3 "/" $2 " (" $3/$2*100 "% used)"}')"
-            echo "   Disk: $(df -h / | tail -1 | awk '{print $3 "/" $2 " (" $5 " used)"}')"
-            echo "   Load: $(uptime | awk -F'load average:' '{print $2}')"
             
-            echo ""
-            echo "🎉 Deployment completed successfully at $(date)"
-            echo "==============================================="
+            # Check environment variables are loaded
+            echo "   🔍 Verifying environment variables..."
+            if cat /proc/$PID/environ | tr '\0' '\n' | grep -q "TURSO_DATABASE_URL"; then
+              echo "   ✅ Environment variables loaded"
+            else
+              echo "   ❌ Environment variables missing"
+            fi
+            
+          else
+            echo "   ❌ No uvicorn process found!"
+            echo "   📝 Checking recent logs..."
+            
+            if [ -f "/home/kksimons/class-scheduler/app/app.log" ]; then
+              echo "   📝 Manual process logs:"
+              tail -10 /home/kksimons/class-scheduler/app/app.log
+            fi
+            
+            exit 1
+          fi
+
+          # System resource check
+          echo "📊 System resources:"
+          echo "   Memory: $(free -h | grep Mem | awk '{print $3 "/" $2 " (" $3/$2*100 "% used)"}')"
+          echo "   Disk: $(df -h / | tail -1 | awk '{print $3 "/" $2 " (" $5 " used)"}')"
+          echo "   Load: $(uptime | awk -F'load average:' '{print $2}')"
+
+          echo ""
+          echo "🎉 Deployment completed successfully at $(date)"
+          echo "==============================================="
           EOF
