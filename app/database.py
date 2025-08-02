@@ -22,9 +22,12 @@ class SchedulerDatabase:
             if not database_url or not auth_token:
                 raise Exception('Missing Turso database credentials. Please check TURSO_DATABASE_URL and TURSO_AUTH_TOKEN environment variables.')
             
-            # Initialize Turso client
+            # Initialize Turso client - convert WebSocket URL to HTTP URL for better compatibility
+            http_url = database_url.replace('libsql://', 'https://').replace(':443', '')
+            print(f'🔧 Connecting to Turso database: {http_url}')
+            
             self.client = create_client(
-                url=database_url,
+                url=http_url,
                 auth_token=auth_token
             )
 
