@@ -282,13 +282,13 @@ async def portfolio_optimal_schedules(
     schedules = []
 
     # Generate multiple schedule variations by trying different approaches
-    # Respect user's weekend preference for all variations
+    # Create more diverse variations by using different strategies
     variation_configs = [
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 30},  # User preference with full time
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 15},  # User preference with faster search
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 20},  # User preference with medium time
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 10},  # User preference with quick search
-        {"exclude_weekend": user_exclude_weekend, "time_limit": 5},   # User preference with very quick search
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 30, "strategy": "optimal"},     # Primary optimal solution
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 15, "strategy": "dumb"},       # Fast alternative using dumb scheduler
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 25, "strategy": "optimal"},    # Secondary optimal with different timeout
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 8, "strategy": "dumb"},        # Quick dumb scheduler variation
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 12, "strategy": "dumb"},       # Medium dumb scheduler variation
     ]
 
     generated_schedules = set()  # Track unique schedules to avoid duplicates
@@ -297,28 +297,45 @@ async def portfolio_optimal_schedules(
         try:
             print(f"🔄 Generating variation {i + 1} with config: {config}")
 
-            # Try optimal scheduler first
-            try:
-                optimal_schedule, best_score = generate_optimal_schedule(
-                    courses, exclude_weekend=config["exclude_weekend"]
-                )
-            except Exception as e:
-                print(f"Optimal scheduler failed: {e}")
-                optimal_schedule = None
+            # Use the specified strategy
+            optimal_schedule = None
+            best_score = None
+            
+            if config.get("strategy") == "optimal":
+                # Try optimal scheduler first
+                try:
+                    optimal_schedule, best_score = generate_optimal_schedule(
+                        courses, exclude_weekend=config["exclude_weekend"]
+                    )
+                    print(f"✅ Optimal scheduler succeeded for variation {i + 1}")
+                except Exception as e:
+                    print(f"❌ Optimal scheduler failed for variation {i + 1}: {e}")
+                    optimal_schedule = None
 
-            # If optimal scheduler fails, fall back to dumb scheduler
-            if not optimal_schedule:
-                optimal_schedule, best_score = generate_dumb_schedule(
-                    courses,
-                    exclude_weekend=config["exclude_weekend"],
-                    time_limit=config.get("time_limit", 30),
-                )
+            # Use dumb scheduler if strategy is "dumb" or if optimal failed
+            if not optimal_schedule or config.get("strategy") == "dumb":
+                try:
+                    # Use randomization for dumb scheduler variations to get different results
+                    use_randomization = i > 0  # First one uses normal order, rest are randomized
+                    optimal_schedule, best_score = generate_dumb_schedule(
+                        courses,
+                        exclude_weekend=config["exclude_weekend"],
+                        time_limit=config.get("time_limit", 30),
+                        randomize=use_randomization
+                    )
+                    print(f"✅ Dumb scheduler succeeded for variation {i + 1} (randomized: {use_randomization})")
+                except Exception as e:
+                    print(f"❌ Dumb scheduler failed for variation {i + 1}: {e}")
+                    optimal_schedule = None
 
             if optimal_schedule:
-                # Create a signature for this schedule to detect duplicates
+                # Create a comprehensive signature for this schedule to detect duplicates
                 schedule_signature = []
                 for section_data in optimal_schedule:
-                    signature_part = f"{section_data.get('course', '')}-{section_data.get('professor', '')}"
+                    # Include course, professor, and time slots in signature
+                    day1_sig = f"{section_data.get('day1', {}).get('day', '')}-{section_data.get('day1', {}).get('start', '')}"
+                    day2_sig = f"{section_data.get('day2', {}).get('day', '')}-{section_data.get('day2', {}).get('start', '')}"
+                    signature_part = f"{section_data.get('course', '')}-{section_data.get('professor', '')}-{day1_sig}-{day2_sig}"
                     schedule_signature.append(signature_part)
                 schedule_signature = sorted(schedule_signature)
                 signature_str = "|".join(schedule_signature)

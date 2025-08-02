@@ -1,5 +1,6 @@
 import itertools
 import time
+import random
 
 """
 Possible combinations with 5 courses, each with 5 sections, there are 5^5 = 3125 combinations.
@@ -115,13 +116,14 @@ def evaluate_schedule(schedule):
 
     return days_off, online_only_days
 
-def generate_dumb_schedule(courses, time_limit=30, exclude_weekend=True):
+def generate_dumb_schedule(courses, time_limit=30, exclude_weekend=True, randomize=False):
     """
     Generates the optimal schedule by exploring all possible combinations of course sections.
     Args:
         courses (list): List of courses with their sections.
         time_limit (int): Maximum time allowed for schedule generation (in seconds).
         exclude_weekend (bool): Whether to exclude weekends from scheduling.
+        randomize (bool): Whether to randomize the search order for different results.
     Returns:
         tuple: (best_schedule, best_score) where best_score is (days_off, online_only_days)
     """
@@ -137,7 +139,13 @@ def generate_dumb_schedule(courses, time_limit=30, exclude_weekend=True):
     # Generate all possible combinations of course sections
     # Each course must have at least one section
     course_sections = [course["sections"] for course in courses]
-    for course_combination in itertools.product(*course_sections):
+    combinations = list(itertools.product(*course_sections))
+    
+    # Randomize the order if requested to get different results
+    if randomize:
+        random.shuffle(combinations)
+    
+    for course_combination in combinations:
         # Check if the time limit has been exceeded
         if time.time() - start_time > time_limit:
             break  # Exit the loop if time limit is exceeded
