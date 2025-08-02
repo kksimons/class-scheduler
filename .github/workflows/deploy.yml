@@ -17,14 +17,14 @@ jobs:
         run: |
           echo "🔑 Setting up SSH key..."
           mkdir -p ~/.ssh
-          
+
           # Write SSH key and verify format
           cat > ~/.ssh/deploy_key << 'EOF'
           ${{ secrets.VPS_SSH_KEY }}
           EOF
-          
+
           chmod 600 ~/.ssh/deploy_key
-          
+
           # Verify key format
           echo "🔍 Verifying SSH key format..."
           if ssh-keygen -l -f ~/.ssh/deploy_key; then
@@ -33,11 +33,11 @@ jobs:
             echo "❌ SSH key format is invalid!"
             exit 1
           fi
-          
+
           # Add host to known_hosts
           echo "🌐 Adding host to known_hosts..."
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
-          
+
           # Test SSH connection
           echo "🔌 Testing SSH connection..."
           if ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} "echo 'SSH connection successful'"; then
@@ -113,38 +113,38 @@ jobs:
             # Create/update .env file with secrets
             echo "⚙️  Creating environment configuration..."
             cat > app/.env << 'ENVEOF'
-TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
-TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
-API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
-ENVEOF
-            echo "   - Environment file created with $(wc -l < app/.env) variables"
+          TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
+          API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
+          ENVEOF
+                      echo "   - Environment file created with $(wc -l < app/.env) variables"
 
-            # Stop existing processes first
-            echo "🛑 Stopping existing processes..."
-            sudo systemctl stop class-scheduler.service 2>/dev/null || echo "   - Systemd service was not running"
-            pkill -f "uvicorn.*app:app" 2>/dev/null || echo "   - No manual processes to kill"
-            sleep 2
+                      # Stop existing processes first
+                      echo "🛑 Stopping existing processes..."
+                      sudo systemctl stop class-scheduler.service 2>/dev/null || echo "   - Systemd service was not running"
+                      pkill -f "uvicorn.*app:app" 2>/dev/null || echo "   - No manual processes to kill"
+                      sleep 2
 
-            # Update systemd service configuration
-            echo "🔧 Updating systemd service configuration..."
-            sudo tee /etc/systemd/system/class-scheduler.service > /dev/null << 'SERVICEEOF'
-[Unit]
-Description=Class Scheduler FastAPI Application
-After=network.target
+                      # Update systemd service configuration
+                      echo "🔧 Updating systemd service configuration..."
+                      sudo tee /etc/systemd/system/class-scheduler.service > /dev/null << 'SERVICEEOF'
+          [Unit]
+          Description=Class Scheduler FastAPI Application
+          After=network.target
 
-[Service]
-Type=simple
-User=kksimons
-WorkingDirectory=/home/kksimons/class-scheduler/app
-Environment=PATH=/home/kksimons/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/kksimons/.local/bin/uvicorn app:app --host 0.0.0.0 --port 8502
-EnvironmentFile=/home/kksimons/class-scheduler/app/.env
-Restart=always
-RestartSec=3
+          [Service]
+          Type=simple
+          User=kksimons
+          WorkingDirectory=/home/kksimons/class-scheduler/app
+          Environment=PATH=/home/kksimons/.local/bin:/usr/local/bin:/usr/bin:/bin
+          ExecStart=/home/kksimons/.local/bin/uvicorn app:app --host 0.0.0.0 --port 8502
+          EnvironmentFile=/home/kksimons/class-scheduler/app/.env
+          Restart=always
+          RestartSec=3
 
-[Install]
-WantedBy=multi-user.target
-SERVICEEOF
+          [Install]
+          WantedBy=multi-user.target
+          SERVICEEOF
 
             # Reload systemd and enable service
             echo "🔄 Reloading systemd configuration..."
@@ -229,3 +229,4 @@ SERVICEEOF
             echo "🎉 Deployment completed successfully at $(date)"
             echo "==============================================="
           EOF
+
