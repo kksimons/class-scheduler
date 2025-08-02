@@ -276,17 +276,19 @@ async def portfolio_optimal_schedules(
     courses = [course.dict() for course in data.courses]
     requested_count = data.count or 5
     user_exclude_weekend = data.preferences.get("exclude_weekend", True)
+    
+    print(f"📅 User preferences: exclude_weekend={user_exclude_weekend}, requested_count={requested_count}")
 
     schedules = []
 
     # Generate multiple schedule variations by trying different approaches
-    # Use user's weekend preference as the primary option, then try opposite as variation
+    # Respect user's weekend preference for all variations
     variation_configs = [
         {"exclude_weekend": user_exclude_weekend, "time_limit": 30},  # User preference with full time
         {"exclude_weekend": user_exclude_weekend, "time_limit": 15},  # User preference with faster search
-        {"exclude_weekend": not user_exclude_weekend, "time_limit": 20},  # Opposite preference as variation
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 20},  # User preference with medium time
         {"exclude_weekend": user_exclude_weekend, "time_limit": 10},  # User preference with quick search
-        {"exclude_weekend": not user_exclude_weekend, "time_limit": 10},  # Opposite preference quick
+        {"exclude_weekend": user_exclude_weekend, "time_limit": 5},   # User preference with very quick search
     ]
 
     generated_schedules = set()  # Track unique schedules to avoid duplicates
