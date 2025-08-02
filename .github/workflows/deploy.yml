@@ -51,6 +51,19 @@ jobs:
             exit 1
           fi
 
+      - name: Setup SSH key on VPS
+        run: |
+          # First, ensure SSH key is set up on the VPS before deployment
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} << 'SSHEOF'
+          echo "🔐 Setting up SSH key authorization..."
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGOgTuG5sz6Oa7i3ImMHqxX51/JYVIMKUmmvwDNvriid github-actions-deploy" > ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+
+          echo "   ✅ SSH key hardcoded and set up"
+          SSHEOF
+
       - name: Deploy to VPS
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} << 'EOF'
@@ -58,20 +71,6 @@ jobs:
 
           echo "🚀 Starting deployment to $(hostname) at $(date)"
           echo "==============================================="
-
-          # Always ensure SSH key is in authorized_keys for future deployments
-          echo "🔐 Ensuring SSH key authorization for future deployments..."
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
-          # Always add the key (remove duplicates first)
-          grep -v "github-actions-deploy" ~/.ssh/authorized_keys 2>/dev/null > ~/.ssh/authorized_keys.tmp || true
-          echo "${{ secrets.VPS_SSH_PUBLIC_KEY }}" >> ~/.ssh/authorized_keys.tmp
-          mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
-          chmod 600 ~/.ssh/authorized_keys
-
-          KEY_COUNT=$(wc -l < ~/.ssh/authorized_keys)
-          echo "   ✅ SSH key restored - $KEY_COUNT total keys in authorized_keys"
 
           # Create app directory if it doesn't exist
           echo "📁 Setting up application directory..."
