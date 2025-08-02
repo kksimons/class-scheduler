@@ -101,14 +101,21 @@ jobs:
           python3 -c "import fastapi; print('   ✅ fastapi installed')" || echo "   ❌ fastapi missing"
           python3 -c "import uvicorn; print('   ✅ uvicorn installed')" || echo "   ❌ uvicorn missing"
 
-          # Create/update .env file with secrets
+          # Create/update .env file with secrets in both locations
           echo "⚙️  Creating environment configuration..."
+          cat > .env << 'ENVEOF'
+          TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
+          API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
+          ENVEOF
+
+          # Also create in app directory for fallback
           cat > app/.env << 'ENVEOF'
           TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
           API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
           ENVEOF
-          echo "   - Environment file created with $(wc -l < app/.env) variables"
+          echo "   - Environment file created with $(wc -l < .env) variables"
 
           # Stop existing processes first
           echo "🛑 Stopping existing processes..."
@@ -117,15 +124,28 @@ jobs:
 
           # Start the service manually (bypassing systemd due to sudo restrictions)
           echo "▶️  Starting class-scheduler service manually..."
-          cd /home/kksimons/class-scheduler/app
+          cd /home/kksimons/class-scheduler
 
-          # Export environment variables from .env file
-          export $(cat .env | grep -v '^#' | xargs)
+          # Create a startup script that preserves environment
+          cat > start_server.sh << 'STARTEOF'
+          #!/bin/bash
+          cd /home/kksimons/class-scheduler
+
+          # Load environment variables
+          if [ -f .env ]; then
+            export $(cat .env | grep -v '^#' | xargs)
+          fi
+
+          # Start uvicorn from the root directory so it can find the app module
+          python3 -m uvicorn app.app:app --host 0.0.0.0 --port 8502
+          STARTEOF
+
+          chmod +x start_server.sh
 
           # Start the service in background with logging
-          nohup python3 -m uvicorn app:app --host 0.0.0.0 --port 8502 > app.log 2>&1 &
+          nohup ./start_server.sh > app.log 2>&1 &
           echo "   📝 Service started manually, logs in app.log"
-          sleep 5  # Give service time to start
+          sleep 8  # Give service more time to start
 
           # Comprehensive status check
           echo "🔍 Verifying deployment status..."
@@ -155,18 +175,21 @@ jobs:
             # Check environment variables are loaded
             echo "   🔍 Verifying environment variables..."
             if [ -n "$PID" ] && cat /proc/$PID/environ 2>/dev/null | tr '\0' '\n' | grep -q "TURSO_DATABASE_URL"; then
-              echo "   ✅ Environment variables loaded"
+              echo "   ✅ Environment variables loaded in process"
+            elif [ -f "/home/kksimons/class-scheduler/.env" ]; then
+              echo "   ⚠️  Environment file exists, checking if process loaded it..."
+              cat /proc/$PID/environ 2>/dev/null | tr '\0' '\n' | grep -E "(TURSO|API_SECRET)" || echo "   ❌ Environment variables not loaded by process"
             else
-              echo "   ❌ Environment variables missing"
+              echo "   ❌ Environment file missing"
             fi
             
           else
             echo "   ❌ No uvicorn process found!"
             echo "   📝 Checking recent logs..."
             
-            if [ -f "/home/kksimons/class-scheduler/app/app.log" ]; then
+            if [ -f "/home/kksimons/class-scheduler/app.log" ]; then
               echo "   📝 Manual process logs:"
-              tail -10 /home/kksimons/class-scheduler/app/app.log
+              tail -10 /home/kksimons/class-scheduler/app.log
             fi
             
             exit 1
