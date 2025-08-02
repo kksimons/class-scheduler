@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
 import os
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -665,7 +667,7 @@ async def admin_rename_dataset(
 
         await database.client.execute(
             "UPDATE datasets SET name = ?, updated_at = ? WHERE id = ?",
-            [data.name.strip()[:255], now_iso, dataset_id]
+            [data.name.strip()[:255], now_iso, dataset_id],
         )
 
         return {"success": True, "message": "Dataset renamed successfully"}
@@ -723,6 +725,100 @@ async def admin_get_dataset_links(
 
     except Exception as e:
         print(f"❌ Failed to get dataset links: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/shared-schedules")
+async def admin_get_shared_schedules(auth: dict = Depends(verify_admin_auth)):
+    """
+    Admin endpoint to get all shared schedule links
+    """
+    print("🔐 Admin get shared schedules request")
+
+    try:
+        # Ensure database is initialized
+        if not database.is_initialized:
+            await database.initialize_database()
+
+        # Get all shared schedules
+        result = await database.client.execute("""
+            SELECT id, alias, metadata, created_at, expires_at, view_count
+            FROM shared_schedules 
+            ORDER BY created_at DESC
+        """)
+
+        shared_schedules = []
+        base_url = "https://kylesimons.ca"
+
+        for row in result.rows:
+            # Parse metadata for additional info
+            metadata = {}
+            if row["metadata"]:
+                try:
+                    metadata = json.loads(row["metadata"])
+                except:
+                    pass
+
+            share_key = row["alias"] if row["alias"] else row["id"]
+            share_url = f"{base_url}/scheduler?share={share_key}"
+
+            # Check if expired
+            is_expired = False
+            if row["expires_at"]:
+                try:
+                    expires_at = datetime.fromisoformat(row["expires_at"])
+                    is_expired = datetime.now() > expires_at
+                except:
+                    pass
+
+            shared_schedules.append({
+                "id": row["id"],
+                "alias": row["alias"],
+                "shareKey": share_key,
+                "shareUrl": share_url,
+                "metadata": metadata,
+                "createdAt": row["created_at"],
+                "expiresAt": row["expires_at"],
+                "viewCount": row["view_count"] or 0,
+                "isExpired": is_expired,
+                "description": metadata.get("program", "Unknown") + " - " + metadata.get("term", "Unknown") if metadata else "Shared Schedule"
+            })
+
+        return {
+            "success": True,
+            "sharedSchedules": shared_schedules,
+            "total": len(shared_schedules)
+        }
+
+    except Exception as e:
+        print(f"❌ Failed to get shared schedules: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/shared-schedules/{share_id}")
+async def admin_delete_shared_schedule(
+    share_id: str, auth: dict = Depends(verify_admin_auth)
+):
+    """
+    Admin endpoint to delete a shared schedule link
+    """
+    print(f"🔐 Admin delete shared schedule request for: {share_id}")
+
+    try:
+        # Ensure database is initialized
+        if not database.is_initialized:
+            await database.initialize_database()
+
+        # Delete the shared schedule
+        result = await database.client.execute(
+            "DELETE FROM shared_schedules WHERE id = ? OR alias = ?",
+            [share_id, share_id]
+        )
+
+        return {"success": True, "message": "Shared schedule deleted successfully"}
+
+    except Exception as e:
+        print(f"❌ Failed to delete shared schedule: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -16,27 +16,26 @@ class SchedulerDatabase:
         """Initialize the Turso database connection"""
         try:
             # Get credentials from environment variables
-            database_url = os.getenv('TURSO_DATABASE_URL')
-            auth_token = os.getenv('TURSO_AUTH_TOKEN')
-            
+            database_url = os.getenv("TURSO_DATABASE_URL")
+            auth_token = os.getenv("TURSO_AUTH_TOKEN")
+
             if not database_url or not auth_token:
-                raise Exception('Missing Turso database credentials. Please check TURSO_DATABASE_URL and TURSO_AUTH_TOKEN environment variables.')
-            
+                raise Exception(
+                    "Missing Turso database credentials. Please check TURSO_DATABASE_URL and TURSO_AUTH_TOKEN environment variables."
+                )
+
             # Initialize Turso client - convert WebSocket URL to HTTP URL for better compatibility
-            http_url = database_url.replace('libsql://', 'https://').replace(':443', '')
-            print(f'🔧 Connecting to Turso database: {http_url}')
-            
-            self.client = create_client(
-                url=http_url,
-                auth_token=auth_token
-            )
+            http_url = database_url.replace("libsql://", "https://").replace(":443", "")
+            print(f"🔧 Connecting to Turso database: {http_url}")
+
+            self.client = create_client(url=http_url, auth_token=auth_token)
 
             # Create tables if they don't exist
             await self.create_tables()
             self.is_initialized = True
-            print('✅ Database initialized successfully')
+            print("✅ Database initialized successfully")
         except Exception as error:
-            print(f'❌ Database initialization failed: {error}')
+            print(f"❌ Database initialization failed: {error}")
             raise error
 
     async def create_tables(self):
@@ -95,9 +94,9 @@ class SchedulerDatabase:
                 CREATE INDEX IF NOT EXISTS idx_shared_schedules_alias ON shared_schedules (alias)
             """)
 
-            print('✅ Database tables created/verified')
+            print("✅ Database tables created/verified")
         except Exception as error:
-            print(f'❌ Failed to create tables: {error}')
+            print(f"❌ Failed to create tables: {error}")
             raise error
 
     def generate_id(self):
@@ -109,19 +108,19 @@ class SchedulerDatabase:
         errors = []
 
         # Basic validation
-        if not dataset.get('program') or not isinstance(dataset['program'], str):
-            errors.append('Program name is required and must be a string')
+        if not dataset.get("program") or not isinstance(dataset["program"], str):
+            errors.append("Program name is required and must be a string")
 
-        if not dataset.get('term') or not isinstance(dataset['term'], str):
-            errors.append('Term is required and must be a string')
+        if not dataset.get("term") or not isinstance(dataset["term"], str):
+            errors.append("Term is required and must be a string")
 
-        if not dataset.get('courses') or not isinstance(dataset['courses'], list):
-            errors.append('Courses must be an array')
+        if not dataset.get("courses") or not isinstance(dataset["courses"], list):
+            errors.append("Courses must be an array")
 
         return {
-            'is_valid': len(errors) == 0,
-            'errors': errors,
-            'sanitized_dataset': dataset
+            "is_valid": len(errors) == 0,
+            "errors": errors,
+            "sanitized_dataset": dataset,
         }
 
     async def save_dataset(self, dataset):
@@ -130,10 +129,12 @@ class SchedulerDatabase:
             await self.initialize_database()
 
         validation = self.validate_dataset(dataset)
-        if not validation['is_valid']:
-            raise Exception(f"Dataset validation failed: {', '.join(validation['errors'])}")
+        if not validation["is_valid"]:
+            raise Exception(
+                f"Dataset validation failed: {', '.join(validation['errors'])}"
+            )
 
-        sanitized_dataset = validation['sanitized_dataset']
+        sanitized_dataset = validation["sanitized_dataset"]
         dataset_id = self.generate_id()
         now = datetime.now().isoformat()
 
@@ -144,33 +145,33 @@ class SchedulerDatabase:
                 [
                     dataset_id,
                     f"{sanitized_dataset['program']} - {sanitized_dataset['term']}",
-                    sanitized_dataset['program'],
-                    sanitized_dataset['term'],
+                    sanitized_dataset["program"],
+                    sanitized_dataset["term"],
                     now,
-                    now
-                ]
+                    now,
+                ],
             )
 
             # Insert courses
-            for course in sanitized_dataset['courses']:
+            for course in sanitized_dataset["courses"]:
                 course_id = self.generate_id()
                 await self.client.execute(
                     "INSERT INTO courses (id, dataset_id, course_name, course_data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
                     [
                         course_id,
                         dataset_id,
-                        course['course'],
+                        course["course"],
                         json.dumps(course),
                         now,
-                        now
-                    ]
+                        now,
+                    ],
                 )
 
-            print(f'✅ Dataset saved successfully: {dataset_id}')
-            return {'success': True, 'datasetId': dataset_id}
+            print(f"✅ Dataset saved successfully: {dataset_id}")
+            return {"success": True, "datasetId": dataset_id}
 
         except Exception as error:
-            print(f'❌ Failed to save dataset: {error}')
+            print(f"❌ Failed to save dataset: {error}")
             raise error
 
     async def load_dataset(self, dataset_id):
@@ -181,42 +182,41 @@ class SchedulerDatabase:
         try:
             # Get dataset info
             dataset_result = await self.client.execute(
-                'SELECT * FROM datasets WHERE id = ? AND is_active = 1',
-                [dataset_id]
+                "SELECT * FROM datasets WHERE id = ? AND is_active = 1", [dataset_id]
             )
 
             if not dataset_result.rows:
-                raise Exception('Dataset not found')
+                raise Exception("Dataset not found")
 
             dataset = dataset_result.rows[0]
 
             # Get courses
             courses_result = await self.client.execute(
-                'SELECT * FROM courses WHERE dataset_id = ? ORDER BY course_name',
-                [dataset_id]
+                "SELECT * FROM courses WHERE dataset_id = ? ORDER BY course_name",
+                [dataset_id],
             )
 
             courses = []
             for row in courses_result.rows:
                 try:
-                    course_data = json.loads(row['course_data'])
+                    course_data = json.loads(row["course_data"])
                     courses.append(course_data)
                 except Exception as error:
-                    print(f'Failed to parse course data: {error}')
+                    print(f"Failed to parse course data: {error}")
                     continue
 
             return {
-                'id': dataset['id'],
-                'name': dataset['name'],
-                'program': dataset['program'],
-                'term': dataset['term'],
-                'courses': courses,
-                'createdAt': dataset['created_at'],
-                'updatedAt': dataset['updated_at']
+                "id": dataset["id"],
+                "name": dataset["name"],
+                "program": dataset["program"],
+                "term": dataset["term"],
+                "courses": courses,
+                "createdAt": dataset["created_at"],
+                "updatedAt": dataset["updated_at"],
             }
 
         except Exception as error:
-            print(f'❌ Failed to load dataset: {error}')
+            print(f"❌ Failed to load dataset: {error}")
             raise error
 
     async def list_datasets(self):
@@ -236,20 +236,22 @@ class SchedulerDatabase:
 
             datasets = []
             for row in result.rows:
-                datasets.append({
-                    'id': row['id'],
-                    'name': row['name'],
-                    'program': row['program'],
-                    'term': row['term'],
-                    'courseCount': row['course_count'],
-                    'createdAt': row['created_at'],
-                    'updatedAt': row['updated_at']
-                })
+                datasets.append(
+                    {
+                        "id": row["id"],
+                        "name": row["name"],
+                        "program": row["program"],
+                        "term": row["term"],
+                        "courseCount": row["course_count"],
+                        "createdAt": row["created_at"],
+                        "updatedAt": row["updated_at"],
+                    }
+                )
 
             return datasets
 
         except Exception as error:
-            print(f'❌ Failed to list datasets: {error}')
+            print(f"❌ Failed to list datasets: {error}")
             raise error
 
     async def update_dataset(self, dataset_id, dataset):
@@ -258,10 +260,12 @@ class SchedulerDatabase:
             await self.initialize_database()
 
         validation = self.validate_dataset(dataset)
-        if not validation['is_valid']:
-            raise Exception(f"Dataset validation failed: {', '.join(validation['errors'])}")
+        if not validation["is_valid"]:
+            raise Exception(
+                f"Dataset validation failed: {', '.join(validation['errors'])}"
+            )
 
-        sanitized_dataset = validation['sanitized_dataset']
+        sanitized_dataset = validation["sanitized_dataset"]
         now = datetime.now().isoformat()
 
         try:
@@ -269,40 +273,39 @@ class SchedulerDatabase:
             await self.client.execute(
                 "UPDATE datasets SET program = ?, term = ?, name = ?, updated_at = ? WHERE id = ?",
                 [
-                    sanitized_dataset['program'],
-                    sanitized_dataset['term'],
+                    sanitized_dataset["program"],
+                    sanitized_dataset["term"],
                     f"{sanitized_dataset['program']} - {sanitized_dataset['term']}",
                     now,
-                    dataset_id
-                ]
+                    dataset_id,
+                ],
             )
 
             # Delete existing courses
             await self.client.execute(
-                'DELETE FROM courses WHERE dataset_id = ?',
-                [dataset_id]
+                "DELETE FROM courses WHERE dataset_id = ?", [dataset_id]
             )
 
             # Insert updated courses
-            for course in sanitized_dataset['courses']:
+            for course in sanitized_dataset["courses"]:
                 course_id = self.generate_id()
                 await self.client.execute(
                     "INSERT INTO courses (id, dataset_id, course_name, course_data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
                     [
                         course_id,
                         dataset_id,
-                        course['course'],
+                        course["course"],
                         json.dumps(course),
                         now,
-                        now
-                    ]
+                        now,
+                    ],
                 )
 
-            print(f'✅ Dataset updated successfully: {dataset_id}')
-            return {'success': True, 'datasetId': dataset_id}
+            print(f"✅ Dataset updated successfully: {dataset_id}")
+            return {"success": True, "datasetId": dataset_id}
 
         except Exception as error:
-            print(f'❌ Failed to update dataset: {error}')
+            print(f"❌ Failed to update dataset: {error}")
             raise error
 
     async def delete_dataset(self, dataset_id):
@@ -313,18 +316,20 @@ class SchedulerDatabase:
         try:
             # Soft delete - just mark as inactive
             await self.client.execute(
-                'UPDATE datasets SET is_active = 0, updated_at = ? WHERE id = ?',
-                [datetime.now().isoformat(), dataset_id]
+                "UPDATE datasets SET is_active = 0, updated_at = ? WHERE id = ?",
+                [datetime.now().isoformat(), dataset_id],
             )
 
-            print(f'✅ Dataset deleted successfully: {dataset_id}')
-            return {'success': True}
+            print(f"✅ Dataset deleted successfully: {dataset_id}")
+            return {"success": True}
 
         except Exception as error:
-            print(f'❌ Failed to delete dataset: {error}')
+            print(f"❌ Failed to delete dataset: {error}")
             raise error
 
-    async def save_shared_schedule(self, schedule_data, metadata=None, expires_in_days=30, alias=None):
+    async def save_shared_schedule(
+        self, schedule_data, metadata=None, expires_in_days=30, alias=None
+    ):
         """Save a shared schedule to the database"""
         if not self.is_initialized:
             await self.initialize_database()
@@ -332,22 +337,28 @@ class SchedulerDatabase:
         try:
             share_id = self.generate_id()
             now = datetime.now()
-            expires_at = now + timedelta(days=expires_in_days) if expires_in_days else None
+            expires_at = (
+                now + timedelta(days=expires_in_days) if expires_in_days else None
+            )
 
             # Validate alias if provided
             if alias:
                 # Check if alias already exists
                 existing = await self.client.execute(
-                    'SELECT id FROM shared_schedules WHERE alias = ?',
-                    [alias]
+                    "SELECT id FROM shared_schedules WHERE alias = ?", [alias]
                 )
                 if existing.rows:
-                    raise Exception(f'Alias "{alias}" is already taken. Please choose a different one.')
-                
+                    raise Exception(
+                        f'Alias "{alias}" is already taken. Please choose a different one.'
+                    )
+
                 # Validate alias format (alphanumeric, hyphens, underscores, 3-50 chars)
                 import re
-                if not re.match(r'^[a-zA-Z0-9_-]{3,50}$', alias):
-                    raise Exception('Alias must be 3-50 characters and contain only letters, numbers, hyphens, and underscores.')
+
+                if not re.match(r"^[a-zA-Z0-9_-]{3,50}$", alias):
+                    raise Exception(
+                        "Alias must be 3-50 characters and contain only letters, numbers, hyphens, and underscores."
+                    )
 
             await self.client.execute(
                 "INSERT INTO shared_schedules (id, alias, schedule_data, metadata, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -357,16 +368,16 @@ class SchedulerDatabase:
                     json.dumps(schedule_data),
                     json.dumps(metadata) if metadata else None,
                     now.isoformat(),
-                    expires_at.isoformat() if expires_at else None
-                ]
+                    expires_at.isoformat() if expires_at else None,
+                ],
             )
 
             share_key = alias if alias else share_id
-            print(f'✅ Shared schedule saved: {share_key} (ID: {share_id})')
-            return {'success': True, 'shareId': share_id, 'shareKey': share_key}
+            print(f"✅ Shared schedule saved: {share_key} (ID: {share_id})")
+            return {"success": True, "shareId": share_id, "shareKey": share_key}
 
         except Exception as error:
-            print(f'❌ Failed to save shared schedule: {error}')
+            print(f"❌ Failed to save shared schedule: {error}")
             raise error
 
     async def get_shared_schedule(self, share_key):
@@ -377,8 +388,8 @@ class SchedulerDatabase:
         try:
             # Try to find by ID first, then by alias
             result = await self.client.execute(
-                'SELECT * FROM shared_schedules WHERE id = ? OR alias = ?',
-                [share_key, share_key]
+                "SELECT * FROM shared_schedules WHERE id = ? OR alias = ?",
+                [share_key, share_key],
             )
 
             if not result.rows:
@@ -387,27 +398,28 @@ class SchedulerDatabase:
             row = result.rows[0]
 
             # Check if expired
-            if row['expires_at']:
-                expires_at = datetime.fromisoformat(row['expires_at'])
+            if row["expires_at"]:
+                expires_at = datetime.fromisoformat(row["expires_at"])
                 if datetime.now() > expires_at:
                     return None
 
             # Increment view count
             await self.client.execute(
-                'UPDATE shared_schedules SET view_count = view_count + 1 WHERE id = ?',
-                [row['id']]
+                "UPDATE shared_schedules SET view_count = view_count + 1 WHERE id = ?",
+                [row["id"]],
             )
 
             return {
-                'id': row['id'],
-                'alias': row['alias'],
-                'scheduleData': json.loads(row['schedule_data']),
-                'metadata': json.loads(row['metadata']) if row['metadata'] else None,
-                'createdAt': row['created_at'],
-                'expiresAt': row['expires_at'],
-                'viewCount': row['view_count'] + 1
+                "id": row["id"],
+                "alias": row["alias"],
+                "scheduleData": json.loads(row["schedule_data"]),
+                "metadata": json.loads(row["metadata"]) if row["metadata"] else None,
+                "createdAt": row["created_at"],
+                "expiresAt": row["expires_at"],
+                "viewCount": row["view_count"] + 1,
             }
 
         except Exception as error:
-            print(f'❌ Failed to get shared schedule: {error}')
+            print(f"❌ Failed to get shared schedule: {error}")
             raise error
+
