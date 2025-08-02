@@ -15,103 +15,208 @@ jobs:
 
       - name: Setup SSH key
         run: |
+          echo "🔑 Setting up SSH key..."
           mkdir -p ~/.ssh
+          
+          # Write SSH key and verify format
           cat > ~/.ssh/deploy_key << 'EOF'
           ${{ secrets.VPS_SSH_KEY }}
           EOF
+          
           chmod 600 ~/.ssh/deploy_key
+          
+          # Verify key format
+          echo "🔍 Verifying SSH key format..."
+          if ssh-keygen -l -f ~/.ssh/deploy_key; then
+            echo "✅ SSH key format is valid"
+          else
+            echo "❌ SSH key format is invalid!"
+            exit 1
+          fi
+          
+          # Add host to known_hosts
+          echo "🌐 Adding host to known_hosts..."
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+          
+          # Test SSH connection
+          echo "🔌 Testing SSH connection..."
+          if ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} "echo 'SSH connection successful'"; then
+            echo "✅ SSH connection test passed"
+          else
+            echo "❌ SSH connection test failed!"
+            echo "Key fingerprint:"
+            ssh-keygen -l -f ~/.ssh/deploy_key
+            echo "Trying to connect with verbose output..."
+            ssh -v -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} "echo test" || true
+            exit 1
+          fi
 
       - name: Deploy to VPS
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} << 'EOF'
+            set -e  # Exit on any error
+            
+            echo "🚀 Starting deployment to $(hostname) at $(date)"
+            echo "==============================================="
+            
+            # Verify SSH key is still in authorized_keys
+            echo "🔐 Verifying SSH key authorization..."
+            if [ -f ~/.ssh/authorized_keys ]; then
+              KEY_COUNT=$(wc -l < ~/.ssh/authorized_keys)
+              echo "   - Found $KEY_COUNT authorized keys"
+              if grep -q "github-actions-deploy" ~/.ssh/authorized_keys; then
+                echo "   ✅ GitHub Actions key found in authorized_keys"
+              else
+                echo "   ⚠️  GitHub Actions key not found, this might cause future deployment issues"
+              fi
+            else
+              echo "   ⚠️  No authorized_keys file found!"
+            fi
+            
             # Create app directory if it doesn't exist
+            echo "📁 Setting up application directory..."
             mkdir -p /home/kksimons/class-scheduler
             cd /home/kksimons/class-scheduler
 
             # Clone or update repository
+            echo "📦 Updating code repository..."
             if [ -d ".git" ]; then
+              echo "   - Git repository exists, pulling latest changes..."
               git pull origin main || git pull origin master
             else
+              echo "   - Cloning repository for first time..."
               git clone https://github.com/kksimons/class-scheduler.git .
             fi
+            
+            echo "   - Current commit: $(git rev-parse --short HEAD)"
+            echo "   - Last commit message: $(git log -1 --pretty=%B | head -1)"
 
-            # Install Python dependencies with --break-system-packages
+            # Install Python dependencies
+            echo "📚 Installing Python dependencies..."
             python3 -m pip install --user --break-system-packages -r app/requirements.txt
             
-            # Ensure all dependencies are properly installed
-            echo "Verifying critical dependencies..."
-            python3 -c "import libsql_client; print('✅ libsql_client installed')" || echo "❌ libsql_client missing"
-            python3 -c "import fastapi; print('✅ fastapi installed')" || echo "❌ fastapi missing"
+            # Verify critical dependencies
+            echo "🔍 Verifying critical dependencies..."
+            python3 -c "import libsql_client; print('   ✅ libsql_client:', libsql_client.__version__)" || echo "   ❌ libsql_client missing"
+            python3 -c "import fastapi; print('   ✅ fastapi installed')" || echo "   ❌ fastapi missing"
+            python3 -c "import uvicorn; print('   ✅ uvicorn installed')" || echo "   ❌ uvicorn missing"
             
             # Create/update .env file with secrets
+            echo "⚙️  Creating environment configuration..."
             cat > app/.env << 'ENVEOF'
-          TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
-          API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
-          ENVEOF
+TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
+TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
+API_SECRET_KEY=${{ secrets.API_SECRET_KEY }}
+ENVEOF
+            echo "   - Environment file created with $(wc -l < app/.env) variables"
 
-                      # Update systemd service configuration
-                      sudo tee /etc/systemd/system/class-scheduler.service > /dev/null << 'SERVICEEOF'
-          [Unit]
-          Description=Class Scheduler FastAPI Application
-          After=network.target
+            # Stop existing processes first
+            echo "🛑 Stopping existing processes..."
+            sudo systemctl stop class-scheduler.service 2>/dev/null || echo "   - Systemd service was not running"
+            pkill -f "uvicorn.*app:app" 2>/dev/null || echo "   - No manual processes to kill"
+            sleep 2
 
-          [Service]
-          Type=simple
-          User=kksimons
-          WorkingDirectory=/home/kksimons/class-scheduler
-          Environment=PATH=/home/kksimons/.local/bin:/usr/local/bin:/usr/bin:/bin
-          ExecStart=/home/kksimons/.local/bin/uvicorn app.app:app --host 0.0.0.0 --port 8502
-          Restart=always
-          RestartSec=3
+            # Update systemd service configuration
+            echo "🔧 Updating systemd service configuration..."
+            sudo tee /etc/systemd/system/class-scheduler.service > /dev/null << 'SERVICEEOF'
+[Unit]
+Description=Class Scheduler FastAPI Application
+After=network.target
 
-          [Install]
-          WantedBy=multi-user.target
-          SERVICEEOF
+[Service]
+Type=simple
+User=kksimons
+WorkingDirectory=/home/kksimons/class-scheduler/app
+Environment=PATH=/home/kksimons/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/kksimons/.local/bin/uvicorn app:app --host 0.0.0.0 --port 8502
+EnvironmentFile=/home/kksimons/class-scheduler/app/.env
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
 
             # Reload systemd and enable service
+            echo "🔄 Reloading systemd configuration..."
             sudo systemctl daemon-reload
             sudo systemctl enable class-scheduler.service
 
-            # Kill any existing process and restart manually if sudo fails
-            if ! sudo systemctl restart class-scheduler.service 2>/dev/null; then
-              echo "Sudo restart failed, trying manual process management..."
-              pkill -f "uvicorn.*app:app" || true
-              sleep 2
-              cd /home/kksimons/class-scheduler
-              # Export environment variables from .env file before starting
-              export $(cat app/.env | grep -v '^#' | xargs)
-              nohup python3 -m uvicorn app.app:app --host 0.0.0.0 --port 8502 > /dev/null 2>&1 &
+            # Start the service
+            echo "▶️  Starting class-scheduler service..."
+            if sudo systemctl start class-scheduler.service 2>/dev/null; then
+              echo "   ✅ Service started via systemd"
+              sleep 5  # Give service time to start
+            else
+              echo "   ⚠️  Systemd start failed, trying manual start..."
+              cd /home/kksimons/class-scheduler/app
+              export $(cat .env | grep -v '^#' | xargs)
+              nohup python3 -m uvicorn app:app --host 0.0.0.0 --port 8502 > app.log 2>&1 &
+              echo "   📝 Manual process started, logs in app.log"
               sleep 3
             fi
 
-            # Check if it's running (try both systemd and manual process)
-            if sudo systemctl is-active --quiet class-scheduler.service 2>/dev/null || pgrep -f "uvicorn.*app:app" > /dev/null; then
-              echo "FastAPI app is running successfully"
-              if sudo systemctl status class-scheduler.service --no-pager 2>/dev/null; then
-                echo "Running via systemd"
+            # Comprehensive status check
+            echo "🔍 Verifying deployment status..."
+            echo "----------------------------------------"
+            
+            # Check if process is running
+            if PID=$(pgrep -f "uvicorn.*app:app"); then
+              echo "   ✅ Process running with PID: $PID"
+              
+              # Check which port it's listening on
+              if netstat -tlnp 2>/dev/null | grep ":8502" | grep "$PID" >/dev/null; then
+                echo "   ✅ Service listening on port 8502"
               else
-                echo "Running as manual process:"
-                pgrep -f "uvicorn.*app:app" && echo "Process found"
+                echo "   ❌ Service NOT listening on port 8502"
+                netstat -tlnp 2>/dev/null | grep "$PID" || echo "   - No listening ports found for process"
               fi
-              echo ""
-              echo "Memory status after deployment:"
-              free -h
-              echo ""
-              echo "Swap status:"
-              sudo swapon --show || echo "No swap configured"
+              
+              # Check systemd status
+              if sudo systemctl is-active --quiet class-scheduler.service 2>/dev/null; then
+                echo "   ✅ Running via systemd service"
+                sudo systemctl status class-scheduler.service --no-pager --lines=5
+              else
+                echo "   ⚠️  Running as manual process"
+              fi
+              
+              # Test API endpoint
+              echo "   🌐 Testing API endpoint..."
+              if curl -s -f http://localhost:8502/ >/dev/null; then
+                echo "   ✅ API responding successfully"
+                curl -s http://localhost:8502/ | head -1
+              else
+                echo "   ❌ API not responding on localhost:8502"
+              fi
+              
+              # Check environment variables are loaded
+              echo "   🔍 Verifying environment variables..."
+              if sudo cat /proc/$PID/environ | tr '\0' '\n' | grep -q "TURSO_DATABASE_URL"; then
+                echo "   ✅ Environment variables loaded"
+              else
+                echo "   ❌ Environment variables missing"
+              fi
+              
             else
-              echo "Failed to start FastAPI app"
-              if sudo journalctl -u class-scheduler.service --no-pager -n 10 2>/dev/null; then
-                echo "Systemd logs shown above"
-              else
-                echo "Could not access systemd logs, checking for any running processes..."
-                ps aux | grep -E "(uvicorn|fastapi)" | grep -v grep || echo "No related processes found"
+              echo "   ❌ No uvicorn process found!"
+              echo "   📝 Checking recent logs..."
+              sudo journalctl -u class-scheduler.service --no-pager -n 10 || echo "   - No systemd logs available"
+              
+              if [ -f "/home/kksimons/class-scheduler/app/app.log" ]; then
+                echo "   📝 Manual process logs:"
+                tail -10 /home/kksimons/class-scheduler/app/app.log
               fi
-              echo ""
-              echo "Memory status:"
-              free -h
+              
               exit 1
             fi
+
+            # System resource check
+            echo "📊 System resources:"
+            echo "   Memory: $(free -h | grep Mem | awk '{print $3 "/" $2 " (" $3/$2*100 "% used)"}')"
+            echo "   Disk: $(df -h / | tail -1 | awk '{print $3 "/" $2 " (" $5 " used)"}')"
+            echo "   Load: $(uptime | awk -F'load average:' '{print $2}')"
+            
+            echo ""
+            echo "🎉 Deployment completed successfully at $(date)"
+            echo "==============================================="
           EOF
