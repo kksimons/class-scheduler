@@ -95,9 +95,8 @@ def evaluate_schedule(schedule):
 
     # Iterate over each section in the schedule
     for section in schedule:
-        # Check both day1 and day2 information
-        for day_key in ["day1", "day2"]:
-            day_info = section.get(day_key)
+        # Check each day in the section
+        for day_info in section.get("days", []) :
             if day_info and day_info["day"] in weekdays:
                 # Increment the class count based on the format (online or in-person)
                 day_classes[day_info["day"]][day_info["format"]] += 1
@@ -167,12 +166,14 @@ def generate_dumb_schedule(courses, time_limit=30, exclude_weekend=True, randomi
                 continue  # Move to the next section
 
             professor = section["professor"]
-            day1 = section["day1"]
-            day2 = section["day2"]
+            days = section["days"]
 
-            # Check both day1 and day2 for scheduling conflicts
-            for day_info in [day1, day2]:
+            # Check each day for scheduling conflicts
+            for day_info in days:
                 day = day_info["day"]
+                if not day or not day_info["start"] or not day_info["end"]:
+                    continue
+                
                 if day not in valid_days:
                     conflict_found = True  # Invalid day found
                     break  # Exit the loop
@@ -190,9 +191,9 @@ def generate_dumb_schedule(courses, time_limit=30, exclude_weekend=True, randomi
                 break  # Exit the loop if any conflict is found
 
             # Mark the occupied time slots for each day in the section
-            for day_info in [day1, day2]:
+            for day_info in days:
                 day = day_info["day"]
-                if day in valid_days:
+                if day in valid_days and day_info["start"] and day_info["end"]:
                     start = parse_time(day_info["start"])
                     end = parse_time(day_info["end"])
                     mark_time(day_vectors[day], start, end)  # Mark time as occupied
@@ -200,8 +201,7 @@ def generate_dumb_schedule(courses, time_limit=30, exclude_weekend=True, randomi
             # Add the section to the structured schedule
             structured_schedule.append({
                 "course": course_name,
-                "day1": day1,
-                "day2": day2,
+                "days": days,
                 "professor": professor
             })
             scheduled_courses.add(course_name)  # Mark the course as scheduled

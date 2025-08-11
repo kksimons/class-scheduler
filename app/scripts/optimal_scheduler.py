@@ -32,9 +32,10 @@ def generate_optimal_schedule(courses: List[Dict[str, Any]], exclude_weekend: bo
             is_selected = model.NewBoolVar(f'section_selected_{course_name}_{idx}')
             section_selector_vars.append(is_selected)
 
-            for day_key in ["day1", "day2"]:
-                day_info = section[day_key]
+            for day_info in section.get("days", []) :
                 day = day_info["day"]
+                if not day or not day_info["start"] or not day_info["end"]:
+                    continue
 
                 if day not in valid_days:
                     continue
@@ -45,7 +46,7 @@ def generate_optimal_schedule(courses: List[Dict[str, Any]], exclude_weekend: bo
 
                 # Create an optional interval variable for each day of the section
                 interval = model.NewOptionalIntervalVar(
-                    start, duration, end, is_selected, f'{course_name}_{day}_{day_key}_{idx}'
+                    start, duration, end, is_selected, f'{course_name}_{day}_{idx}'
                 )
                 
                 section_intervals.append((interval, is_selected))
@@ -109,8 +110,7 @@ def generate_optimal_schedule(courses: List[Dict[str, Any]], exclude_weekend: bo
             if not any(sch["course"] == course_name for sch in selected_schedule):
                 selected_schedule.append({
                     "course": course_name,
-                    "day1": selected_section["day1"],
-                    "day2": selected_section["day2"],
+                    "days": selected_section["days"],
                     "professor": selected_section["professor"]
                 })
 

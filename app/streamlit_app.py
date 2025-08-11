@@ -25,8 +25,7 @@ for i, course in enumerate(st.session_state["courses"]):
     if st.button(f"Add Section for {course_name}", key=f"add_section_{i}"):
         st.session_state["courses"][i]["sections"].append(
             {
-                "day1": {"day": "", "start": "", "end": "", "format": ""},
-                "day2": {"day": "", "start": "", "end": "", "format": ""},
+                "days": [],
                 "professor": "",
             }
         )

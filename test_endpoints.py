@@ -20,18 +20,20 @@ test_dataset = {
             "sections": [
                 {
                     "professor": "Dr. Test",
-                    "day1": {
-                        "day": "M",
-                        "start": "09:00",
-                        "end": "10:30",
-                        "format": "in-person"
-                    },
-                    "day2": {
-                        "day": "W",
-                        "start": "09:00", 
-                        "end": "10:30",
-                        "format": "in-person"
-                    }
+                    "days": [
+                        {
+                            "day": "M",
+                            "start": "09:00",
+                            "end": "10:30",
+                            "format": "in-person"
+                        },
+                        {
+                            "day": "W",
+                            "start": "09:00", 
+                            "end": "10:30",
+                            "format": "in-person"
+                        }
+                    ]
                 }
             ]
         }

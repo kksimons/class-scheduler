@@ -122,8 +122,7 @@ class DayInfo(BaseModel):
 
 
 class Section(BaseModel):
-    day1: DayInfo  # First day information
-    day2: DayInfo  # Second day information
+    days: List[DayInfo]  # List of days for the section
     professor: str  # Professor's name
 
 
@@ -385,9 +384,11 @@ async def portfolio_optimal_schedules(
                 schedule_signature = []
                 for section_data in optimal_schedule:
                     # Include course, professor, and time slots in signature
-                    day1_sig = f"{section_data.get('day1', {}).get('day', '')}-{section_data.get('day1', {}).get('start', '')}"
-                    day2_sig = f"{section_data.get('day2', {}).get('day', '')}-{section_data.get('day2', {}).get('start', '')}"
-                    signature_part = f"{section_data.get('course', '')}-{section_data.get('professor', '')}-{day1_sig}-{day2_sig}"
+                    day_sigs = []
+                    for day_info in section_data.get('days', []):
+                        day_sigs.append(f"{day_info.get('day', '')}-{day_info.get('start', '')}")
+                    
+                    signature_part = f"{section_data.get('course', '')}-{section_data.get('professor', '')}-{'|'.join(day_sigs)}"
                     schedule_signature.append(signature_part)
                 schedule_signature = sorted(schedule_signature)
                 signature_str = "|".join(schedule_signature)
@@ -411,9 +412,8 @@ async def portfolio_optimal_schedules(
                     conflict_score = 0
                     time_slots = {}
                     for section_data in optimal_schedule:
-                        for day_key in ["day1", "day2"]:
-                            if day_key in section_data:
-                                day_info = section_data[day_key]
+                        for day_info in section_data.get('days', []) :
+                            if day_info:
                                 time_key = f"{day_info.get('day')}-{day_info.get('start')}-{day_info.get('end')}"
                                 if time_key in time_slots:
                                     conflict_score += 1
@@ -474,10 +474,9 @@ async def portfolio_validate_schedule(
         section = selection.get("section", {})
         course = selection.get("course", "Unknown")
 
-        # Check both day1 and day2 for conflicts
-        for day_key in ["day1", "day2"]:
-            if day_key in section:
-                day_info = section[day_key]
+        # Check days for conflicts
+        for day_info in section.get("days", []) :
+            if day_info:
                 day = day_info.get("day")
                 start = day_info.get("start")
                 end = day_info.get("end")

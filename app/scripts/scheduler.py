@@ -16,12 +16,10 @@ def create_class_scheduling_model(courses):
             section_vars.append(section_selected)
 
             # Apply format constraints if specified for each day in the section
-            if section.day1.format == "online":
-                day1_selected = model.NewBoolVar(f"course_{course_idx}_sec_{sec_idx}_day1_online")
-                model.Add(day1_selected == 1).OnlyEnforceIf(section_selected)
-            if section.day2.format == "online":
-                day2_selected = model.NewBoolVar(f"course_{course_idx}_sec_{sec_idx}_day2_online")
-                model.Add(day2_selected == 1).OnlyEnforceIf(section_selected)
+            for day_info in section.days:
+                if day_info.format == "online":
+                    day_selected = model.NewBoolVar(f"course_{course_idx}_sec_{sec_idx}_{day_info.day}_online")
+                    model.Add(day_selected == 1).OnlyEnforceIf(section_selected)
 
         # Enforce that only one section is selected per course
         model.Add(sum(section_vars) == 1)
@@ -38,14 +36,11 @@ def create_class_scheduling_model(courses):
         # Collect classes for each day across all sections
         for course_idx, course in enumerate(courses):
             for sec_idx, section in enumerate(course.sections):
-                if section.day1.day == day:
-                    classes_on_day.append(shifts[(course_idx, sec_idx)])
-                    if section.day1.format == "online":
-                        online_classes_on_day.append(shifts[(course_idx, sec_idx)])
-                if section.day2.day == day:
-                    classes_on_day.append(shifts[(course_idx, sec_idx)])
-                    if section.day2.format == "online":
-                        online_classes_on_day.append(shifts[(course_idx, sec_idx)])
+                for day_info in section.days:
+                    if day_info.day == day:
+                        classes_on_day.append(shifts[(course_idx, sec_idx)])
+                        if day_info.format == "online":
+                            online_classes_on_day.append(shifts[(course_idx, sec_idx)])
 
         # Enforce day off if no classes are scheduled
         model.Add(sum(classes_on_day) == 0).OnlyEnforceIf(day_off_vars[day])
@@ -64,11 +59,10 @@ def create_class_scheduling_model(courses):
                     continue
                 for other_sec_idx, other_section in enumerate(other_course.sections):
                     # Check overlap for each day in the section
-                    if section.day1.day == other_section.day1.day and section.day1.end > other_section.day1.start and section.day1.start < other_section.day1.end:
-                        model.AddBoolOr([shifts[(course_idx, sec_idx)].Not(), shifts[(other_course_idx, other_sec_idx)].Not()])
-
-                    if section.day2.day == other_section.day2.day and section.day2.end > other_section.day2.start and section.day2.start < other_section.day2.end:
-                        model.AddBoolOr([shifts[(course_idx, sec_idx)].Not(), shifts[(other_course_idx, other_sec_idx)].Not()])
+                    for day_info in section.days:
+                        for other_day_info in other_section.days:
+                            if day_info.day == other_day_info.day and day_info.end > other_day_info.start and day_info.start < other_day_info.end:
+                                model.AddBoolOr([shifts[(course_idx, sec_idx)].Not(), shifts[(other_course_idx, other_sec_idx)].Not()])
 
     return model, shifts
 
@@ -96,18 +90,12 @@ def solve_class_scheduling(model, shifts, courses):
                 if self.Value(var) == 1:
                     section = self._courses[course_idx].sections[sec_idx]
                     result[f"course_{course_idx}_sec_{sec_idx}"] = {
-                        "day1": {
-                            "day": section.day1.day,
-                            "start": section.day1.start,
-                            "end": section.day1.end,
-                            "format": section.day1.format
-                        },
-                        "day2": {
-                            "day": section.day2.day,
-                            "start": section.day2.start,
-                            "end": section.day2.end,
-                            "format": section.day2.format
-                        },
+                        "days": [{
+                            "day": day.day,
+                            "start": day.start,
+                            "end": day.end,
+                            "format": day.format
+                        } for day in section.days],
                         "professor": section.professor
                     }
 
